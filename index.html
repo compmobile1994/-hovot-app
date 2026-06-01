@@ -838,6 +838,7 @@ function deleteCustomer(id) {
 // ==================== Transactions ====================
 let currentCustomerId = null;
 let currentTransactionType = 'debt';
+let editingTransactionId = null;
 
 const CATEGORIES = [
   '📋 כללי',
@@ -926,12 +927,32 @@ function setDateQuick(daysOffset) {
 function openTransactionModal(customerId) {
   currentCustomerId = customerId;
   currentTransactionType = 'debt';
+  editingTransactionId = null;
   setTransactionType('debt');
   document.getElementById('amountInput').value = '';
   document.getElementById('noteInput').value = '';
   populateDateSelects();
   setDateValue(new Date().toISOString().slice(0,10));
   document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+  document.getElementById('transactionModalTitle').textContent = 'תנועה חדשה';
+  openModal('transactionModal');
+}
+
+function openEditTransactionModal(customerId, transactionId) {
+  const c = state.customers.find(x => x.id === customerId);
+  if (!c) return;
+  const t = c.transactions.find(x => x.id === transactionId);
+  if (!t) return;
+  currentCustomerId = customerId;
+  editingTransactionId = transactionId;
+  currentTransactionType = t.type;
+  setTransactionType(t.type);
+  document.getElementById('amountInput').value = t.amount;
+  document.getElementById('noteInput').value = t.note || '';
+  populateDateSelects();
+  setDateValue(t.date);
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+  document.getElementById('transactionModalTitle').textContent = '✏️ עריכת תנועה';
   openModal('transactionModal');
 }
 
@@ -976,7 +997,20 @@ function saveTransaction() {
     return;
   }
   const c = state.customers.find(x => x.id === currentCustomerId);
-  c.transactions.push({ id: uid(), date, type: currentTransactionType, amount, note });
+  if (editingTransactionId) {
+    // Edit existing transaction
+    const t = c.transactions.find(x => x.id === editingTransactionId);
+    if (t) {
+      t.date = date;
+      t.type = currentTransactionType;
+      t.amount = amount;
+      t.note = note;
+    }
+    editingTransactionId = null;
+  } else {
+    // New transaction
+    c.transactions.push({ id: uid(), date, type: currentTransactionType, amount, note });
+  }
   closeModal('transactionModal');
   saveState();
   showCustomerDetail(currentCustomerId);
@@ -1007,9 +1041,10 @@ function showCustomerDetail(id) {
               ${t.note ? `<div class="transaction-note-main">${escapeHtml(t.note)}</div>` : `<div class="transaction-note-main" style="color:#9ca3af">${typeLabel}</div>`}
               <div class="date">${fmtDate(t.date)}</div>
             </div>
-            <div style="display:flex;align-items:center;flex-shrink:0">
+            <div style="display:flex;align-items:center;flex-shrink:0;gap:2px">
               <div class="transaction-amount">${sign}${fmtMoney(t.amount)}</div>
-              <button class="transaction-delete" onclick="event.stopPropagation();deleteTransaction('${c.id}','${t.id}')">🗑️</button>
+              <button class="transaction-delete" title="ערוך" onclick="event.stopPropagation();openEditTransactionModal('${c.id}','${t.id}')">✏️</button>
+              <button class="transaction-delete" title="מחק" onclick="event.stopPropagation();deleteTransaction('${c.id}','${t.id}')">🗑️</button>
             </div>
           </div>
         `;
