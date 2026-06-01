@@ -1,0 +1,8 @@
+# Files we don't want in the GitHub repo
+whatsapp_chat.txt
+_צ'אט WhatsApp עם משימות.zip
+hovot-app.zip
+make_icons.py
+*.bak
+.DS_Store
+Thumbs.db

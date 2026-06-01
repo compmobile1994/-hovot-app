@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#1e40af" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="חובות" />
+<meta name="mobile-web-app-capable" content="yes" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<title>חובות</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Heebo", "Arial Hebrew", Arial, sans-serif;
+    background: linear-gradient(135deg, #f0f4ff 0%, #fef3f3 100%);
+    min-height: 100vh;
+    color: #1f2937;
+    padding-bottom: 100px;
+  }
+  .container { max-width: 720px; margin: 0 auto; padding: 16px; }
+
+  /* Header */
+  header {
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+    color: white;
+    padding: 24px 16px 32px;
+    border-radius: 0 0 24px 24px;
+    margin: -16px -16px 16px;
+    box-shadow: 0 4px 20px rgba(30, 64, 175, 0.2);
+  }
+  header h1 { font-size: 22px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .total-card {
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(10px);
+    border-radius: 16px;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .stat { text-align: center; }
+  .stat-label { font-size: 12px; opacity: 0.85; margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 700; }
+  .stat-value.paid { color: #86efac; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 16px;
+    background: white;
+    padding: 6px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #6b7280;
+    position: relative;
+  }
+  .tab.active { background: #1e40af; color: white; }
+  .tab .badge {
+    background: #ef4444;
+    color: white;
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-right: 4px;
+    font-weight: 700;
+  }
+
+  /* Customer cards */
+  .customer-list { display: flex; flex-direction: column; gap: 10px; }
+  .customer-card {
+    background: white;
+    border-radius: 14px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    border-right: 4px solid #1e40af;
+  }
+  .customer-card:active { transform: scale(0.98); }
+  .customer-card.paid-up { border-right-color: #10b981; opacity: 0.7; }
+  .customer-card.private { border-right-color: #8b5cf6; }
+  .customer-card.private.paid-up { border-right-color: #10b981; }
+  .customer-card-header { display: flex; justify-content: space-between; align-items: center; }
+  .customer-name { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .type-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .type-badge.business { background: #dbeafe; color: #1e40af; }
+  .type-badge.private { background: #ede9fe; color: #6d28d9; }
+
+  /* Filter pills */
+  .filter-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .filter-pill {
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: white;
+    border: 1.5px solid #e5e7eb;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    color: #6b7280;
+    font-family: inherit;
+  }
+  .filter-pill.active { background: #1e40af; color: white; border-color: #1e40af; }
+  .customer-balance {
+    font-size: 20px;
+    font-weight: 700;
+    color: #dc2626;
+  }
+  .customer-card.paid-up .customer-balance { color: #10b981; }
+  .customer-meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+  /* Buttons */
+  .btn {
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: #1e40af; color: white; }
+  .btn-success { background: #10b981; color: white; }
+  .btn-danger { background: #dc2626; color: white; }
+  .btn-secondary { background: #e5e7eb; color: #374151; }
+  .btn-block { width: 100%; }
+
+  /* FAB */
+  .fab {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+    color: white;
+    border: none;
+    font-size: 30px;
+    cursor: pointer;
+    box-shadow: 0 4px 20px rgba(30, 64, 175, 0.4);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .fab:active { transform: scale(0.94); }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 200;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 20px 20px 0 0;
+    width: 100%;
+    max-width: 720px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    animation: slideUp 0.25s ease-out;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal h2 { font-size: 18px; margin-bottom: 16px; }
+  .modal-close {
+    float: left;
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: #6b7280;
+  }
+
+  /* Form */
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #374151; }
+  .form-input, .form-select {
+    width: 100%;
+    padding: 12px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 10px;
+    font-size: 16px;
+    font-family: inherit;
+    background: white;
+  }
+  .form-input:focus, .form-select:focus { outline: none; border-color: #1e40af; }
+  .type-toggle { display: flex; gap: 6px; margin-bottom: 14px; }
+  .type-toggle button {
+    flex: 1;
+    padding: 12px;
+    border: 2px solid #e5e7eb;
+    background: white;
+    border-radius: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .type-toggle button.active.debt { background: #fef2f2; border-color: #dc2626; color: #dc2626; }
+  .type-toggle button.active.payment { background: #ecfdf5; border-color: #10b981; color: #10b981; }
+  .type-toggle button.active.discount { background: #fffbeb; border-color: #d97706; color: #d97706; }
+
+  /* Customer detail */
+  .detail-summary {
+    background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+    color: white;
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+  .detail-stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .detail-stat { text-align: center; }
+  .detail-stat .label { font-size: 11px; opacity: 0.85; }
+  .detail-stat .value { font-size: 18px; font-weight: 700; }
+
+  .transactions { display: flex; flex-direction: column; gap: 8px; }
+  .transaction {
+    background: white;
+    padding: 12px;
+    border-radius: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-right: 3px solid #d1d5db;
+  }
+  .transaction.debt { border-right-color: #dc2626; }
+  .transaction.payment { border-right-color: #10b981; }
+  .transaction.discount { border-right-color: #d97706; }
+  .transaction-info .date { font-size: 12px; color: #6b7280; }
+  .transaction-info .note { font-size: 13px; color: #4b5563; margin-top: 2px; }
+  .transaction-amount {
+    font-weight: 700;
+    font-size: 16px;
+  }
+  .transaction.debt .transaction-amount { color: #dc2626; }
+  .transaction.payment .transaction-amount { color: #10b981; }
+  .transaction.discount .transaction-amount { color: #d97706; }
+  .transaction-delete {
+    background: none;
+    border: none;
+    color: #9ca3af;
+    font-size: 18px;
+    cursor: pointer;
+    margin-right: 8px;
+    padding: 4px 8px;
+  }
+
+  /* Pending imports */
+  .pending-card {
+    background: white;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 10px;
+    border: 1.5px dashed #fbbf24;
+  }
+  .pending-text { font-size: 15px; margin-bottom: 4px; font-weight: 500; }
+  .pending-meta { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
+  .pending-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pending-actions button {
+    padding: 6px 10px;
+    border: 1px solid #e5e7eb;
+    background: white;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .pending-actions button.assign-payment { background: #ecfdf5; border-color: #10b981; color: #10b981; }
+  .pending-actions button.skip { color: #9ca3af; }
+
+  /* Empty state */
+  .empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b7280;
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* Backup section */
+  .backup-section {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e5e7eb;
+  }
+  .backup-section h3 { font-size: 14px; color: #6b7280; margin-bottom: 10px; }
+  .backup-buttons { display: flex; gap: 8px; }
+  .backup-buttons button { flex: 1; padding: 10px; font-size: 13px; }
+
+  .anchor-note {
+    background: #fef3c7;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+    color: #92400e;
+  }
+
+  /* Category chips */
+  .category-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .chip {
+    padding: 7px 12px;
+    border: 1.5px solid #e5e7eb;
+    background: white;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+    color: #4b5563;
+    transition: all 0.15s;
+  }
+  .chip:active { transform: scale(0.95); }
+  .chip.selected {
+    background: #1e40af;
+    color: white;
+    border-color: #1e40af;
+  }
+
+  /* Transaction note display */
+  .transaction-note-main {
+    font-size: 14px;
+    color: #1f2937;
+    font-weight: 500;
+    margin-bottom: 2px;
+  }
+
+  @media (min-width: 768px) {
+    .modal { border-radius: 20px; margin-bottom: 40px; }
+    .modal-overlay { align-items: center; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <h1 style="display:flex;justify-content:space-between;align-items:center">
+      <span>💼 חובות</span>
+      <button id="installBtn" style="display:none;background:rgba(255,255,255,0.25);border:1.5px solid rgba(255,255,255,0.4);color:white;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit" onclick="installApp()">📲 התקן</button>
+    </h1>
+    <div class="total-card">
+      <div class="stat">
+        <div class="stat-label">סך חובות פתוחים</div>
+        <div class="stat-value" id="totalOpen">0 ₪</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">סך שולם</div>
+        <div class="stat-value paid" id="totalPaid">0 ₪</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="customers">לקוחות</div>
+    <div class="tab" data-tab="pending">לסיווג <span class="badge" id="pendingBadge" style="display:none">0</span></div>
+    <div class="tab" data-tab="settings">הגדרות</div>
+  </div>
+
+  <!-- Customers Tab -->
+  <div id="tabCustomers" class="tab-content">
+    <div class="filter-row">
+      <button class="filter-pill active" data-filter="all" onclick="setFilter('all')">הכל</button>
+      <button class="filter-pill" data-filter="business" onclick="setFilter('business')">🏢 עסקיים</button>
+      <button class="filter-pill" data-filter="private" onclick="setFilter('private')">👤 פרטיים</button>
+      <button class="filter-pill" data-filter="open" onclick="setFilter('open')">💰 פתוחים</button>
+    </div>
+    <div id="customerList" class="customer-list"></div>
+    <div id="customerEmpty" class="empty" style="display:none">
+      <div class="empty-icon">👥</div>
+      <div>אין חייבים עדיין</div>
+      <div style="font-size: 13px; margin-top: 6px;">לחץ על הכפתור הכחול בפינה להוספת חייב חדש</div>
+    </div>
+  </div>
+
+  <!-- Pending Imports Tab -->
+  <div id="tabPending" class="tab-content" style="display:none">
+    <div class="anchor-note">📍 הרשומות האלה מהווטסאפ צריכות שיוך ללקוח. לחץ על שם לקוח לשייך, או "דלג" כדי להתעלם.</div>
+    <div id="pendingList"></div>
+    <div id="pendingEmpty" class="empty" style="display:none">
+      <div class="empty-icon">✅</div>
+      <div>כל הרשומות סווגו!</div>
+    </div>
+  </div>
+
+  <!-- Settings Tab -->
+  <div id="tabSettings" class="tab-content" style="display:none">
+    <div class="backup-section">
+      <h3>📁 גיבוי ושחזור</h3>
+      <div class="backup-buttons">
+        <button class="btn btn-primary" onclick="exportData()">📥 ייצוא לקובץ</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">📤 ייבוא קובץ</button>
+        <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)" />
+      </div>
+    </div>
+
+    <div class="backup-section">
+      <h3>⚠️ פעולות מסוכנות</h3>
+      <button class="btn btn-danger btn-block" onclick="resetAll()">🗑️ אפס את כל הנתונים</button>
+    </div>
+
+    <div class="backup-section">
+      <h3>ℹ️ אודות</h3>
+      <div style="font-size: 13px; color: #6b7280; line-height: 1.6;">
+        אפליקציית ניהול חובות לקוחות.<br>
+        הנתונים נשמרים אוטומטית בדפדפן שלך.<br>
+        מומלץ לעשות גיבוי מדי פעם!
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FAB -->
+<button class="fab" onclick="openCustomerModal()">+</button>
+
+<!-- Customer Modal -->
+<div class="modal-overlay" id="customerModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('customerModal')">×</button>
+    <h2 id="customerModalTitle">חייב חדש</h2>
+    <div class="form-group">
+      <label class="form-label">סוג</label>
+      <div class="type-toggle">
+        <button type="button" id="customerTypeBusiness" class="active debt" onclick="setCustomerType('business')">🏢 לקוח עסקי</button>
+        <button type="button" id="customerTypePrivate" onclick="setCustomerType('private')">👤 אדם פרטי</button>
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">שם</label>
+      <input type="text" id="customerNameInput" class="form-input" placeholder="לדוגמה: רועי" />
+    </div>
+    <div class="form-group">
+      <label class="form-label">טלפון / הערה (לא חובה)</label>
+      <input type="text" id="customerNoteInput" class="form-input" placeholder="טלפון, פרטים נוספים..." />
+    </div>
+    <button class="btn btn-primary btn-block" onclick="saveCustomer()">שמור</button>
+  </div>
+</div>
+
+<!-- Transaction Modal -->
+<div class="modal-overlay" id="transactionModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('transactionModal')">×</button>
+    <h2 id="transactionModalTitle">תנועה חדשה</h2>
+    <div class="type-toggle">
+      <button id="typeDebt" class="active debt" onclick="setTransactionType('debt')">➕ חוב חדש</button>
+      <button id="typePayment" onclick="setTransactionType('payment')">💰 תשלום</button>
+      <button id="typeDiscount" onclick="setTransactionType('discount')">➖ הנחה/זיכוי</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">סכום (₪)</label>
+      <input type="number" id="amountInput" class="form-input" placeholder="0" inputmode="decimal" />
+    </div>
+    <div id="categorySection">
+      <div class="form-group">
+        <label class="form-label" id="categoryLabel">על מה זה? <span style="color:#dc2626">*</span></label>
+        <div class="category-chips" id="categoryChips"></div>
+        <input type="text" id="noteInput" class="form-input" placeholder="כתוב על מה החוב..." style="margin-top:8px" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">תאריך</label>
+      <div style="display:flex;gap:6px">
+        <select id="dateDay" class="form-select" style="flex:1"></select>
+        <select id="dateMonth" class="form-select" style="flex:1.5"></select>
+        <select id="dateYear" class="form-select" style="flex:1.2"></select>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button type="button" onclick="setDateQuick(0)" style="flex:1;padding:6px;border:1px solid #e5e7eb;background:white;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">היום</button>
+        <button type="button" onclick="setDateQuick(-1)" style="flex:1;padding:6px;border:1px solid #e5e7eb;background:white;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">אתמול</button>
+        <button type="button" onclick="setDateQuick(-7)" style="flex:1;padding:6px;border:1px solid #e5e7eb;background:white;border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit">לפני שבוע</button>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="saveTransaction()">שמור תנועה</button>
+  </div>
+</div>
+
+<!-- Customer Detail Modal -->
+<div class="modal-overlay" id="detailModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('detailModal')">×</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<!-- Pending Assign Modal -->
+<div class="modal-overlay" id="assignModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal('assignModal')">×</button>
+    <h2>שייך ללקוח</h2>
+    <div id="assignPendingInfo" style="background: #f3f4f6; padding: 12px; border-radius: 10px; margin-bottom: 14px;"></div>
+    <div class="form-group">
+      <label class="form-label">בחר לקוח</label>
+      <select id="assignCustomerSelect" class="form-select"></select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">סוג התנועה</label>
+      <div class="type-toggle">
+        <button id="assignTypeDebt" class="active debt" onclick="setAssignType('debt')">➕ חוב</button>
+        <button id="assignTypePayment" onclick="setAssignType('payment')">💰 תשלום</button>
+        <button id="assignTypeDiscount" onclick="setAssignType('discount')">➖ זיכוי</button>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-block" onclick="confirmAssign()">שייך</button>
+  </div>
+</div>
+
+<script>
+// ==================== Data Layer ====================
+const STORAGE_KEY = 'debt_manager_v1';
+let state = {
+  customers: [],
+  pendingImports: [],
+  meta: { createdAt: new Date().toISOString() }
+};
+
+function loadState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    try { state = JSON.parse(saved); } catch(e) { console.error('Bad saved state', e); }
+  } else {
+    seedInitialData();
+  }
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
+}
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+// ==================== Initial Seed ====================
+function seedInitialData() {
+  // Active debtors confirmed by user
+  const roi = { id: uid(), name: 'רועי', note: '', customerType: 'business', transactions: [
+    { id: uid(), date: '2026-01-22', type: 'debt', amount: 350, note: 'מהוואטסאפ' },
+    { id: uid(), date: '2026-01-25', type: 'debt', amount: 150, note: 'מהוואטסאפ' },
+    { id: uid(), date: '2026-01-25', type: 'payment', amount: 600, note: 'מהוואטסאפ' }
+  ] };
+  const moshe = { id: uid(), name: 'משה', note: '', customerType: 'business', transactions: [] };
+  const avoud = { id: uid(), name: 'עבוד', note: '', customerType: 'business', transactions: [] };
+  const ibrahim = { id: uid(), name: 'איברהים', note: '', customerType: 'business', transactions: [] };
+
+  state.customers = [roi, moshe, avoud, ibrahim];
+
+  // Pending imports from WhatsApp (21.1.2026 onwards, not yet attributed)
+  state.pendingImports = [
+    { id: uid(), date: '2026-01-25 16:43', amount: 150, type: 'debt', text: 'עוד 150₪' },
+    { id: uid(), date: '2026-01-28 14:51', amount: 50, type: 'debt', text: 'עוד 50₪' },
+    { id: uid(), date: '2026-02-02 11:53', amount: 50, type: 'debt', text: 'עוד 50₪' },
+    { id: uid(), date: '2026-02-05 00:04', amount: 190, type: 'debt', text: 'עוד 190₪' },
+    { id: uid(), date: '2026-02-05 12:43', amount: 300, type: 'debt', text: '300₪' },
+    { id: uid(), date: '2026-02-05 14:37', amount: 70, type: 'debt', text: 'עוד 70₪' },
+    { id: uid(), date: '2026-02-05 19:15', amount: 30, type: 'debt', text: 'עוד 30' },
+    { id: uid(), date: '2026-02-05 19:16', amount: 185, type: 'anchor', text: '📍 עבוד סה"כ 185₪ (נקודת עיגון)' },
+    { id: uid(), date: '2026-02-12 13:07', amount: 190, type: 'debt', text: 'עוד 190₪' },
+    { id: uid(), date: '2026-02-13 13:39', amount: 170, type: 'debt', text: 'עוד 170, סה"כ 560₪' },
+    { id: uid(), date: '2026-02-15 11:18', amount: 300, type: 'payment', text: 'שולם 300₪' },
+    { id: uid(), date: '2026-02-16 17:22', amount: 125, type: 'debt', text: 'עוד 125₪' },
+    { id: uid(), date: '2026-02-20 12:35', amount: 150, type: 'debt', text: 'עוד 150₪' },
+    { id: uid(), date: '2026-02-24 10:10', amount: 50, type: 'debt', text: 'עוד 50' },
+    { id: uid(), date: '2026-03-06 11:58', amount: 50, type: 'debt', text: 'עוד 50 (סה"כ איברהים 610₪)' },
+    { id: uid(), date: '2026-03-09 00:15', amount: 255, type: 'debt', text: 'עוד 255₪' },
+    { id: uid(), date: '2026-03-16 11:02', amount: 100, type: 'debt', text: 'עוד 100₪' },
+    { id: uid(), date: '2026-03-17 16:24', amount: 30, type: 'debt', text: 'עוד 30, סה"כ 215₪' },
+    { id: uid(), date: '2026-04-06 18:23', amount: 50, type: 'debt', text: 'עוד 50₪ (איברהים חייב 660₪)' },
+    { id: uid(), date: '2026-04-06 18:24', amount: 150, type: 'debt', text: 'עוד 150₪' },
+    { id: uid(), date: '2026-04-10 10:54', amount: 50, type: 'debt', text: 'עוד 50₪' },
+    { id: uid(), date: '2026-04-13 15:49', amount: 50, type: 'debt', text: 'עוד 50₪' },
+    { id: uid(), date: '2026-04-19 10:58', amount: 170, type: 'debt', text: 'עוד 170' },
+    { id: uid(), date: '2026-04-19 10:58', amount: 200, type: 'payment', text: 'שולם 200' },
+    { id: uid(), date: '2026-04-19 12:36', amount: 150, type: 'debt', text: 'עוד 150₪' },
+    { id: uid(), date: '2026-04-28 13:54', amount: 25, type: 'discount', text: 'פחות 25₪' },
+    { id: uid(), date: '2026-05-05 11:11', amount: 180, type: 'debt', text: 'משה חייב לי 120+30+30 = 180' },
+    { id: uid(), date: '2026-05-05 18:26', amount: 50, type: 'debt', text: 'עוד 50₪' },
+    { id: uid(), date: '2026-05-08 11:06', amount: 120, type: 'debt', text: 'עוד 120' },
+    { id: uid(), date: '2026-05-19 12:22', amount: 180, type: 'debt', text: 'עוד 150+30 = 180' },
+    { id: uid(), date: '2026-05-20 16:53', amount: 80, type: 'debt', text: 'עוד 80' },
+    { id: uid(), date: '2026-05-20 16:53', amount: 100, type: 'payment', text: 'שולם 100' }
+  ];
+
+  saveState();
+}
+
+// ==================== Render ====================
+function customerBalance(c) {
+  let bal = 0;
+  for (const t of c.transactions) {
+    if (t.type === 'debt') bal += t.amount;
+    else if (t.type === 'payment' || t.type === 'discount') bal -= t.amount;
+  }
+  return bal;
+}
+
+function customerStats(c) {
+  let debt = 0, paid = 0, discount = 0;
+  for (const t of c.transactions) {
+    if (t.type === 'debt') debt += t.amount;
+    else if (t.type === 'payment') paid += t.amount;
+    else if (t.type === 'discount') discount += t.amount;
+  }
+  return { debt, paid, discount, balance: debt - paid - discount };
+}
+
+function fmtMoney(n) { return Math.round(n).toLocaleString('he-IL') + ' ₪'; }
+function fmtDate(s) {
+  if (!s) return '';
+  const d = s.split('T')[0].split(' ')[0];
+  const parts = d.split('-');
+  if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  return d;
+}
+
+function render() {
+  // Totals
+  let totalOpen = 0, totalPaid = 0;
+  for (const c of state.customers) {
+    const s = customerStats(c);
+    totalOpen += s.balance;
+    totalPaid += s.paid;
+  }
+  document.getElementById('totalOpen').textContent = fmtMoney(totalOpen);
+  document.getElementById('totalPaid').textContent = fmtMoney(totalPaid);
+
+  // Customer list
+  const list = document.getElementById('customerList');
+  const empty = document.getElementById('customerEmpty');
+  if (state.customers.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+  } else {
+    empty.style.display = 'none';
+    let filtered = [...state.customers];
+    if (currentFilter === 'business') filtered = filtered.filter(c => (c.customerType || 'business') === 'business');
+    else if (currentFilter === 'private') filtered = filtered.filter(c => c.customerType === 'private');
+    else if (currentFilter === 'open') filtered = filtered.filter(c => customerBalance(c) > 0);
+
+    if (filtered.length === 0) {
+      list.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><div>אין תוצאות בקטגוריה הזו</div></div>';
+    } else {
+      const sorted = filtered.sort((a, b) => customerBalance(b) - customerBalance(a));
+      list.innerHTML = sorted.map(c => {
+        const bal = customerBalance(c);
+        const isPaidUp = bal <= 0;
+        const type = c.customerType || 'business';
+        const typeLabel = type === 'business' ? '🏢 עסקי' : '👤 פרטי';
+        return `
+          <div class="customer-card ${isPaidUp ? 'paid-up' : ''} ${type}" onclick="showCustomerDetail('${c.id}')">
+            <div class="customer-card-header">
+              <div>
+                <div class="customer-name">${escapeHtml(c.name)} <span class="type-badge ${type}">${typeLabel}</span></div>
+                <div class="customer-meta">${c.transactions.length} תנועות${c.note ? ' • ' + escapeHtml(c.note) : ''}</div>
+              </div>
+              <div class="customer-balance">${fmtMoney(bal)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  // Pending badge
+  const pendingCount = state.pendingImports.length;
+  const badge = document.getElementById('pendingBadge');
+  if (pendingCount > 0) {
+    badge.style.display = 'inline-block';
+    badge.textContent = pendingCount;
+  } else {
+    badge.style.display = 'none';
+  }
+
+  // Pending list
+  const pendingList = document.getElementById('pendingList');
+  const pendingEmpty = document.getElementById('pendingEmpty');
+  if (state.pendingImports.length === 0) {
+    pendingList.innerHTML = '';
+    pendingEmpty.style.display = 'block';
+  } else {
+    pendingEmpty.style.display = 'none';
+    pendingList.innerHTML = state.pendingImports.map(p => {
+      const typeBadge = p.type === 'payment' ? '💰 תשלום' : p.type === 'discount' ? '➖ הנחה' : p.type === 'anchor' ? '📍 עיגון' : '➕ חוב';
+      return `
+        <div class="pending-card">
+          <div class="pending-text">${escapeHtml(p.text)}</div>
+          <div class="pending-meta">${fmtDate(p.date)} • ${typeBadge} • ${fmtMoney(p.amount)}</div>
+          <div class="pending-actions">
+            ${state.customers.map(c => `<button onclick="quickAssign('${p.id}','${c.id}')">${escapeHtml(c.name)}</button>`).join('')}
+            <button onclick="openAssignModal('${p.id}')">+ אחר</button>
+            <button class="skip" onclick="skipPending('${p.id}')">✕ דלג</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+// ==================== Tabs ====================
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+    document.getElementById('tab' + tab.dataset.tab.charAt(0).toUpperCase() + tab.dataset.tab.slice(1)).style.display = 'block';
+  });
+});
+
+// ==================== Modals ====================
+function openModal(id) {
+  const modal = document.getElementById(id);
+  // Stack modal above any currently-open modal
+  const openModals = Array.from(document.querySelectorAll('.modal-overlay.active'));
+  let maxZ = 199;
+  openModals.forEach(m => {
+    if (m === modal) return;
+    const z = parseInt(m.style.zIndex || 200);
+    if (z > maxZ) maxZ = z;
+  });
+  modal.style.zIndex = maxZ + 1;
+  modal.classList.add('active');
+}
+function closeModal(id) {
+  const modal = document.getElementById(id);
+  modal.classList.remove('active');
+  modal.style.zIndex = '';
+}
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); });
+});
+
+// ==================== Customer CRUD ====================
+let editingCustomerId = null;
+let currentCustomerType = 'business';
+let currentFilter = 'all';
+
+function setFilter(filter) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.filter === filter);
+  });
+  render();
+}
+
+function setCustomerType(type) {
+  currentCustomerType = type;
+  document.getElementById('customerTypeBusiness').classList.remove('active', 'debt');
+  document.getElementById('customerTypePrivate').classList.remove('active', 'payment');
+  if (type === 'business') {
+    document.getElementById('customerTypeBusiness').classList.add('active', 'debt');
+  } else {
+    document.getElementById('customerTypePrivate').classList.add('active', 'payment');
+  }
+}
+
+function openCustomerModal(id) {
+  editingCustomerId = id || null;
+  if (id) {
+    const c = state.customers.find(x => x.id === id);
+    document.getElementById('customerModalTitle').textContent = 'עריכת חייב';
+    document.getElementById('customerNameInput').value = c.name;
+    document.getElementById('customerNoteInput').value = c.note || '';
+    setCustomerType(c.customerType || 'business');
+  } else {
+    document.getElementById('customerModalTitle').textContent = 'חייב חדש';
+    document.getElementById('customerNameInput').value = '';
+    document.getElementById('customerNoteInput').value = '';
+    setCustomerType('business');
+  }
+  openModal('customerModal');
+}
+
+function saveCustomer() {
+  const name = document.getElementById('customerNameInput').value.trim();
+  const note = document.getElementById('customerNoteInput').value.trim();
+  if (!name) { alert('נא להזין שם'); return; }
+  if (editingCustomerId) {
+    const c = state.customers.find(x => x.id === editingCustomerId);
+    c.name = name;
+    c.note = note;
+    c.customerType = currentCustomerType;
+  } else {
+    state.customers.push({ id: uid(), name, note, customerType: currentCustomerType, transactions: [] });
+  }
+  closeModal('customerModal');
+  saveState();
+}
+
+function deleteCustomer(id) {
+  if (!confirm('למחוק את החייב ואת כל התנועות שלו?')) return;
+  state.customers = state.customers.filter(c => c.id !== id);
+  closeModal('detailModal');
+  saveState();
+}
+
+// ==================== Transactions ====================
+let currentCustomerId = null;
+let currentTransactionType = 'debt';
+
+const CATEGORIES = [
+  '📋 כללי',
+  '📱 פתיחת FRP',
+  '🔋 טעינה / טוקמן',
+  '📞 מכשיר',
+  '🔧 תיקון',
+  '🆔 Mi Account',
+  '🦠 וירוס',
+  '🔄 איפוס',
+  '🔐 Auth / MDM',
+  '🖨️ מדפסת / טונר',
+  '📦 חבילה',
+  '🛒 מכירה',
+  '☁️ iCloud',
+  '💵 הלוואה',
+  '🎁 מתנה',
+  '🍔 אוכל',
+  '🚗 דלק / נסיעה',
+  '🛍️ קניות'
+];
+
+function renderCategoryChips() {
+  const container = document.getElementById('categoryChips');
+  container.innerHTML = CATEGORIES.map(cat =>
+    `<button type="button" class="chip" onclick="selectCategory('${cat.replace(/'/g, "\\'")}', this)">${cat}</button>`
+  ).join('');
+}
+
+function selectCategory(cat, btn) {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+  btn.classList.add('selected');
+  const input = document.getElementById('noteInput');
+  input.value = cat;
+}
+
+const HEBREW_MONTHS = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+
+function populateDateSelects() {
+  const dayEl = document.getElementById('dateDay');
+  const monthEl = document.getElementById('dateMonth');
+  const yearEl = document.getElementById('dateYear');
+  if (dayEl.options.length > 0) return; // already populated
+  for (let d = 1; d <= 31; d++) {
+    const opt = document.createElement('option');
+    opt.value = String(d).padStart(2, '0');
+    opt.textContent = d;
+    dayEl.appendChild(opt);
+  }
+  HEBREW_MONTHS.forEach((name, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i + 1).padStart(2, '0');
+    opt.textContent = name;
+    monthEl.appendChild(opt);
+  });
+  const now = new Date(2026, 5, 1); // June 2026
+  for (let y = 2024; y <= 2030; y++) {
+    const opt = document.createElement('option');
+    opt.value = String(y);
+    opt.textContent = y;
+    yearEl.appendChild(opt);
+  }
+}
+
+function setDateValue(isoStr) {
+  populateDateSelects();
+  const [y, m, d] = isoStr.split('-');
+  document.getElementById('dateDay').value = d;
+  document.getElementById('dateMonth').value = m;
+  document.getElementById('dateYear').value = y;
+}
+
+function getDateValue() {
+  const d = document.getElementById('dateDay').value;
+  const m = document.getElementById('dateMonth').value;
+  const y = document.getElementById('dateYear').value;
+  return `${y}-${m}-${d}`;
+}
+
+function setDateQuick(daysOffset) {
+  const today = new Date('2026-06-01');
+  today.setDate(today.getDate() + daysOffset);
+  setDateValue(today.toISOString().slice(0, 10));
+}
+
+function openTransactionModal(customerId) {
+  currentCustomerId = customerId;
+  currentTransactionType = 'debt';
+  setTransactionType('debt');
+  document.getElementById('amountInput').value = '';
+  document.getElementById('noteInput').value = '';
+  populateDateSelects();
+  setDateValue(new Date().toISOString().slice(0,10));
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('selected'));
+  openModal('transactionModal');
+}
+
+function setTransactionType(type) {
+  currentTransactionType = type;
+  ['Debt','Payment','Discount'].forEach(t => {
+    const btn = document.getElementById('type' + t);
+    btn.classList.remove('active', 'debt', 'payment', 'discount');
+  });
+  const map = { debt: 'Debt', payment: 'Payment', discount: 'Discount' };
+  const btn = document.getElementById('type' + map[type]);
+  btn.classList.add('active', type);
+
+  // Update category section based on type
+  const catSection = document.getElementById('categorySection');
+  const catLabel = document.getElementById('categoryLabel');
+  const noteInput = document.getElementById('noteInput');
+  if (type === 'debt') {
+    catSection.style.display = 'block';
+    catLabel.innerHTML = 'על מה זה? <span style="color:#dc2626">*</span>';
+    noteInput.placeholder = 'כתוב על מה החוב...';
+  } else if (type === 'payment') {
+    catSection.style.display = 'block';
+    catLabel.innerHTML = 'הערה לתשלום';
+    noteInput.placeholder = 'מזומן / ביט / העברה...';
+  } else {
+    catSection.style.display = 'block';
+    catLabel.innerHTML = 'סיבת הזיכוי';
+    noteInput.placeholder = 'למה זיכוי?';
+  }
+}
+
+function saveTransaction() {
+  const amount = parseFloat(document.getElementById('amountInput').value);
+  const date = getDateValue();
+  const note = document.getElementById('noteInput').value.trim();
+  if (!amount || amount <= 0) { alert('נא להזין סכום תקין'); return; }
+  if (!date) { alert('נא להזין תאריך'); return; }
+  if (currentTransactionType === 'debt' && !note) {
+    alert('חובה לכתוב על מה החוב!');
+    document.getElementById('noteInput').focus();
+    return;
+  }
+  const c = state.customers.find(x => x.id === currentCustomerId);
+  c.transactions.push({ id: uid(), date, type: currentTransactionType, amount, note });
+  closeModal('transactionModal');
+  saveState();
+  showCustomerDetail(currentCustomerId);
+}
+
+function deleteTransaction(customerId, transactionId) {
+  if (!confirm('למחוק את התנועה?')) return;
+  const c = state.customers.find(x => x.id === customerId);
+  c.transactions = c.transactions.filter(t => t.id !== transactionId);
+  saveState();
+  showCustomerDetail(customerId);
+}
+
+// ==================== Customer Detail ====================
+function showCustomerDetail(id) {
+  const c = state.customers.find(x => x.id === id);
+  if (!c) return;
+  const stats = customerStats(c);
+  const sortedTx = [...c.transactions].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+  const txHtml = sortedTx.length === 0
+    ? '<div class="empty"><div>אין תנועות עדיין</div></div>'
+    : sortedTx.map(t => {
+        const sign = t.type === 'debt' ? '+' : '-';
+        const typeLabel = t.type === 'debt' ? 'חוב' : t.type === 'payment' ? 'תשלום' : 'זיכוי';
+        return `
+          <div class="transaction ${t.type}">
+            <div class="transaction-info" style="flex:1;min-width:0">
+              ${t.note ? `<div class="transaction-note-main">${escapeHtml(t.note)}</div>` : `<div class="transaction-note-main" style="color:#9ca3af">${typeLabel}</div>`}
+              <div class="date">${fmtDate(t.date)}</div>
+            </div>
+            <div style="display:flex;align-items:center;flex-shrink:0">
+              <div class="transaction-amount">${sign}${fmtMoney(t.amount)}</div>
+              <button class="transaction-delete" onclick="event.stopPropagation();deleteTransaction('${c.id}','${t.id}')">🗑️</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+  const type = c.customerType || 'business';
+  const typeLabel = type === 'business' ? '🏢 עסקי' : '👤 פרטי';
+  document.getElementById('detailContent').innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+      <div>
+        <h2>${escapeHtml(c.name)}</h2>
+        <span class="type-badge ${type}" style="margin-top:4px;display:inline-block">${typeLabel}</span>
+      </div>
+      <div>
+        <button class="btn btn-secondary" style="padding:8px 12px;font-size:13px" onclick="openCustomerModal('${c.id}')">✏️</button>
+        <button class="btn btn-danger" style="padding:8px 12px;font-size:13px" onclick="deleteCustomer('${c.id}')">🗑️</button>
+      </div>
+    </div>
+    <div class="detail-summary">
+      <div style="text-align:center">
+        <div style="font-size:13px;opacity:0.85">יתרה לתשלום</div>
+        <div style="font-size:32px;font-weight:700;margin-top:4px">${fmtMoney(stats.balance)}</div>
+      </div>
+      <div class="detail-stats">
+        <div class="detail-stat">
+          <div class="label">סך חוב</div>
+          <div class="value">${fmtMoney(stats.debt)}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="label">שולם</div>
+          <div class="value">${fmtMoney(stats.paid)}</div>
+        </div>
+        <div class="detail-stat">
+          <div class="label">הנחה</div>
+          <div class="value">${fmtMoney(stats.discount)}</div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn btn-primary" style="flex:1" onclick="openTransactionModalWithType('${c.id}','debt')">➕ חוב חדש</button>
+      <button class="btn btn-success" style="flex:1" onclick="openTransactionModalWithType('${c.id}','payment')">💰 תשלום</button>
+    </div>
+    <h3 style="font-size:14px;color:#6b7280;margin-bottom:8px">היסטוריה</h3>
+    <div class="transactions">${txHtml}</div>
+  `;
+  openModal('detailModal');
+}
+
+function openTransactionModalWithType(customerId, type) {
+  openTransactionModal(customerId);
+  setTransactionType(type);
+}
+
+// ==================== Pending Imports ====================
+let currentPendingId = null;
+let assignType = 'debt';
+
+function quickAssign(pendingId, customerId) {
+  const p = state.pendingImports.find(x => x.id === pendingId);
+  if (!p) return;
+  const c = state.customers.find(x => x.id === customerId);
+  if (!c) return;
+  if (p.type === 'anchor') {
+    // Anchors aren't transactions - just remove them
+    if (!confirm('זו נקודת עיגון (סיכום, לא תנועה). למחוק מהרשימה?')) return;
+    state.pendingImports = state.pendingImports.filter(x => x.id !== pendingId);
+    saveState();
+    return;
+  }
+  c.transactions.push({
+    id: uid(),
+    date: p.date.split(' ')[0],
+    type: p.type,
+    amount: p.amount,
+    note: p.text + ' (מהוואטסאפ)'
+  });
+  state.pendingImports = state.pendingImports.filter(x => x.id !== pendingId);
+  saveState();
+}
+
+function openAssignModal(pendingId) {
+  currentPendingId = pendingId;
+  const p = state.pendingImports.find(x => x.id === pendingId);
+  if (!p) return;
+  assignType = p.type === 'anchor' ? 'debt' : p.type;
+  setAssignType(assignType);
+  document.getElementById('assignPendingInfo').innerHTML = `
+    <div style="font-weight:600">${escapeHtml(p.text)}</div>
+    <div style="font-size:12px;color:#6b7280;margin-top:4px">${fmtDate(p.date)} • ${fmtMoney(p.amount)}</div>
+  `;
+  const select = document.getElementById('assignCustomerSelect');
+  select.innerHTML = state.customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+    + '<option value="__new__">+ לקוח חדש...</option>';
+  openModal('assignModal');
+}
+
+function setAssignType(type) {
+  assignType = type;
+  ['Debt','Payment','Discount'].forEach(t => {
+    const btn = document.getElementById('assignType' + t);
+    btn.classList.remove('active', 'debt', 'payment', 'discount');
+  });
+  const map = { debt: 'Debt', payment: 'Payment', discount: 'Discount' };
+  const btn = document.getElementById('assignType' + map[type]);
+  btn.classList.add('active', type);
+}
+
+function confirmAssign() {
+  const customerId = document.getElementById('assignCustomerSelect').value;
+  const p = state.pendingImports.find(x => x.id === currentPendingId);
+  if (!p) return;
+  let c;
+  if (customerId === '__new__') {
+    const name = prompt('שם הלקוח החדש:');
+    if (!name) return;
+    c = { id: uid(), name: name.trim(), note: '', transactions: [] };
+    state.customers.push(c);
+  } else {
+    c = state.customers.find(x => x.id === customerId);
+  }
+  c.transactions.push({
+    id: uid(),
+    date: p.date.split(' ')[0],
+    type: assignType,
+    amount: p.amount,
+    note: p.text + ' (מהוואטסאפ)'
+  });
+  state.pendingImports = state.pendingImports.filter(x => x.id !== currentPendingId);
+  closeModal('assignModal');
+  saveState();
+}
+
+function skipPending(pendingId) {
+  if (!confirm('להוריד את הרשומה מהרשימה? (לא תיווצר תנועה)')) return;
+  state.pendingImports = state.pendingImports.filter(x => x.id !== pendingId);
+  saveState();
+}
+
+// ==================== Backup ====================
+function exportData() {
+  const data = JSON.stringify(state, null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const today = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `debts-backup-${today}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.customers) throw new Error('Bad file format');
+      if (!confirm('הייבוא ידרוס את הנתונים הקיימים. להמשיך?')) return;
+      state = data;
+      if (!state.pendingImports) state.pendingImports = [];
+      saveState();
+      alert('הייבוא הצליח!');
+    } catch(err) {
+      alert('שגיאה בקריאת הקובץ: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function resetAll() {
+  if (!confirm('האם אתה בטוח? כל הנתונים יימחקו!')) return;
+  if (!confirm('בטוח בטוח? אין דרך חזרה!')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  location.reload();
+}
+
+// ==================== Override FAB based on tab ====================
+document.querySelector('.fab').onclick = () => {
+  const activeTab = document.querySelector('.tab.active').dataset.tab;
+  if (activeTab === 'customers') {
+    // If customers exist, ask if they want to add a transaction or customer
+    if (state.customers.length > 0) {
+      // For simplicity, just open customer modal. User can click into customer for transactions.
+      openCustomerModal();
+    } else {
+      openCustomerModal();
+    }
+  } else {
+    openCustomerModal();
+  }
+};
+
+// ==================== Init ====================
+loadState();
+renderCategoryChips();
+populateDateSelects();
+render();
+
+// Register service worker for offline support
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').then(
+      reg => console.log('Service Worker registered:', reg.scope),
+      err => console.log('Service Worker failed:', err)
+    );
+  });
+}
+
+// PWA install prompt handling
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.style.display = 'inline-block';
+});
+
+async function installApp() {
+  if (!deferredInstallPrompt) {
+    alert('אם הכפתור לא עובד:\n\nב-Chrome במחשב: לחץ על 3 הנקודות בפינה הימנית העליונה ← "התקן את חובות"\n\nבטלפון: 3 נקודות ← "הוסף לדף הבית"\n\nאם האפליקציה כבר מותקנת - אין מה לעשות!');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  if (outcome === 'accepted') {
+    document.getElementById('installBtn').style.display = 'none';
+  }
+  deferredInstallPrompt = null;
+}
+
+// Hide install button if app is already installed (running standalone)
+window.addEventListener('appinstalled', () => {
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.style.display = 'none';
+});
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+  const btn = document.getElementById('installBtn');
+  if (btn) btn.style.display = 'none';
+}
+</script>
+</body>
+</html>
