@@ -6,3 +6,6 @@ make_icons.py
 *.bak
 .DS_Store
 Thumbs.db
+
+# Local Netlify folder
+.netlify
