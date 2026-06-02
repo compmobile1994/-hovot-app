@@ -1,0 +1,9 @@
+{
+  "name": "hovot-app",
+  "version": "1.0.0",
+  "description": "Debt management PWA with cloud sync",
+  "private": true,
+  "dependencies": {
+    "@netlify/blobs": "^7.4.0"
+  }
+}

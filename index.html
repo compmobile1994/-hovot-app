@@ -422,8 +422,29 @@
 
   <!-- Settings Tab -->
   <div id="tabSettings" class="tab-content" style="display:none">
+
     <div class="backup-section">
-      <h3>📁 גיבוי ושחזור</h3>
+      <h3>☁️ סנכרון ענן (בין מחשב ופלאפון)</h3>
+      <div style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px">
+        בחר קוד סנכרון (לפחות 6 תווים) - הזן את אותו הקוד בפלאפון ובמחשב כדי לסנכרן את הנתונים.
+      </div>
+      <div class="form-group">
+        <label class="form-label">קוד סנכרון</label>
+        <input type="text" id="syncCodeInput" class="form-input" placeholder="לדוגמה: dvir-1994" maxlength="50" autocomplete="off" />
+      </div>
+      <div class="backup-buttons">
+        <button class="btn btn-primary" onclick="syncUpload()" style="font-size:13px">📤 העלה לענן</button>
+        <button class="btn btn-secondary" onclick="syncDownload()" style="font-size:13px">📥 הורד מהענן</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px;background:#f3f4f6;border-radius:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="autoSyncEnabled" onchange="toggleAutoSync()" />
+        <span>סנכרון אוטומטי (העלאה אוטומטית של כל שינוי)</span>
+      </label>
+      <div id="syncStatus" style="margin-top:10px;font-size:13px;color:#6b7280;text-align:center;min-height:20px"></div>
+    </div>
+
+    <div class="backup-section">
+      <h3>📁 גיבוי לקובץ</h3>
       <div class="backup-buttons">
         <button class="btn btn-primary" onclick="exportData()">📥 ייצוא לקובץ</button>
         <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">📤 ייבוא קובץ</button>
@@ -441,7 +462,7 @@
       <div style="font-size: 13px; color: #6b7280; line-height: 1.6;">
         אפליקציית ניהול חובות לקוחות.<br>
         הנתונים נשמרים אוטומטית בדפדפן שלך.<br>
-        מומלץ לעשות גיבוי מדי פעם!
+        השתמש בסנכרון הענן כדי לסנכרן בין מחשב ופלאפון!
       </div>
     </div>
   </div>
@@ -564,6 +585,7 @@ function loadState() {
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   render();
+  if (typeof autoSyncIfEnabled === 'function') autoSyncIfEnabled();
 }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -1223,6 +1245,141 @@ function resetAll() {
   location.reload();
 }
 
+// ==================== Cloud Sync ====================
+const SYNC_API = '/api/sync';
+const SYNC_CODE_KEY = 'sync_code';
+const AUTO_SYNC_KEY = 'auto_sync_enabled';
+
+function setSyncStatus(msg, isError = false) {
+  const el = document.getElementById('syncStatus');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isError ? '#dc2626' : '#10b981';
+  }
+}
+
+function getSyncCode() {
+  const input = document.getElementById('syncCodeInput');
+  const code = (input ? input.value.trim() : '') || localStorage.getItem(SYNC_CODE_KEY) || '';
+  return code;
+}
+
+function saveSyncCode(code) {
+  localStorage.setItem(SYNC_CODE_KEY, code);
+  const input = document.getElementById('syncCodeInput');
+  if (input) input.value = code;
+}
+
+function validateSyncCode(code) {
+  if (!code || code.length < 6) {
+    alert('קוד סנכרון חייב להיות לפחות 6 תווים');
+    return false;
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(code)) {
+    alert('קוד סנכרון יכול להכיל רק אותיות באנגלית, ספרות, מקף ומקף תחתון');
+    return false;
+  }
+  return true;
+}
+
+async function syncUpload(silent = false) {
+  const code = getSyncCode();
+  if (!validateSyncCode(code)) return false;
+  saveSyncCode(code);
+  if (!silent) setSyncStatus('⏳ מעלה לענן...');
+  try {
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state)
+    });
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody.error || 'שגיאה ' + response.status);
+    }
+    const result = await response.json();
+    const time = new Date(result.uploadedAt).toLocaleTimeString('he-IL');
+    if (!silent) setSyncStatus('✅ הועלה לענן בהצלחה (' + time + ')');
+    return true;
+  } catch (e) {
+    if (!silent) setSyncStatus('❌ ' + e.message, true);
+    return false;
+  }
+}
+
+async function syncDownload() {
+  const code = getSyncCode();
+  if (!validateSyncCode(code)) return;
+  saveSyncCode(code);
+  setSyncStatus('⏳ מוריד מהענן...');
+  try {
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody.error || 'שגיאה ' + response.status);
+    }
+    const data = await response.json();
+    if (!data || !data.customers) {
+      setSyncStatus('⚠️ אין נתונים בענן עבור הקוד הזה', true);
+      return;
+    }
+    const customerCount = data.customers.length;
+    if (!confirm(`נמצאו ${customerCount} לקוחות בענן.\n\nהורדה תדרוס את כל הנתונים הקיימים. להמשיך?`)) {
+      setSyncStatus('בוטל');
+      return;
+    }
+    // Remove sync metadata before storing
+    delete data._syncMeta;
+    state = data;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    setSyncStatus('✅ הורד מהענן בהצלחה');
+    render();
+  } catch (e) {
+    setSyncStatus('❌ ' + e.message, true);
+  }
+}
+
+let autoSyncDebounce = null;
+function autoSyncIfEnabled() {
+  if (localStorage.getItem(AUTO_SYNC_KEY) !== '1') return;
+  const code = localStorage.getItem(SYNC_CODE_KEY);
+  if (!code) return;
+  // Debounce: wait 2 seconds after last change before uploading
+  clearTimeout(autoSyncDebounce);
+  autoSyncDebounce = setTimeout(() => syncUpload(true), 2000);
+}
+
+function toggleAutoSync() {
+  const checkbox = document.getElementById('autoSyncEnabled');
+  const enabled = checkbox.checked;
+  if (enabled) {
+    const code = getSyncCode();
+    if (!validateSyncCode(code)) {
+      checkbox.checked = false;
+      return;
+    }
+    saveSyncCode(code);
+    localStorage.setItem(AUTO_SYNC_KEY, '1');
+    setSyncStatus('✅ סנכרון אוטומטי הופעל - כל שינוי יישמר בענן');
+    syncUpload(false); // Initial upload
+  } else {
+    localStorage.setItem(AUTO_SYNC_KEY, '0');
+    setSyncStatus('⏸️ סנכרון אוטומטי כובה');
+  }
+}
+
+function initSyncUI() {
+  const savedCode = localStorage.getItem(SYNC_CODE_KEY) || '';
+  const input = document.getElementById('syncCodeInput');
+  if (input) input.value = savedCode;
+  const autoEnabled = localStorage.getItem(AUTO_SYNC_KEY) === '1';
+  const checkbox = document.getElementById('autoSyncEnabled');
+  if (checkbox) checkbox.checked = autoEnabled;
+  if (savedCode && autoEnabled) {
+    setSyncStatus('🔄 סנכרון אוטומטי פעיל');
+  }
+}
+
 // ==================== Override FAB based on tab ====================
 document.querySelector('.fab').onclick = () => {
   const activeTab = document.querySelector('.tab.active').dataset.tab;
@@ -1244,6 +1401,7 @@ loadState();
 renderCategoryChips();
 populateDateSelects();
 render();
+initSyncUI();
 
 // Register service worker for offline support
 if ('serviceWorker' in navigator) {
