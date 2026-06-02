@@ -438,8 +438,11 @@
       </div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;padding:10px;background:#f3f4f6;border-radius:8px;font-size:13px;cursor:pointer">
         <input type="checkbox" id="autoSyncEnabled" onchange="toggleAutoSync()" />
-        <span>סנכרון אוטומטי (העלאה אוטומטית של כל שינוי)</span>
+        <span><b>סנכרון אוטומטי מלא</b> - העלאה ⬆️ והורדה ⬇️ אוטומטיים</span>
       </label>
+      <div style="font-size:11px;color:#9ca3af;margin-top:6px;line-height:1.5">
+        💡 כשהאופציה פעילה: שינויים עולים אוטומטית, ועדכונים ממכשיר אחר יורדים אוטומטית כל 30 שניות וגם בפתיחת האפליקציה.
+      </div>
       <div id="syncStatus" style="margin-top:10px;font-size:13px;color:#6b7280;text-align:center;min-height:20px"></div>
     </div>
 
@@ -1249,6 +1252,7 @@ function resetAll() {
 const SYNC_API = '/api/sync';
 const SYNC_CODE_KEY = 'sync_code';
 const AUTO_SYNC_KEY = 'auto_sync_enabled';
+const LAST_CLOUD_TIME_KEY = 'last_cloud_time';
 
 function setSyncStatus(msg, isError = false) {
   const el = document.getElementById('syncStatus');
@@ -1298,6 +1302,7 @@ async function syncUpload(silent = false) {
       throw new Error(errBody.error || 'שגיאה ' + response.status);
     }
     const result = await response.json();
+    localStorage.setItem(LAST_CLOUD_TIME_KEY, result.uploadedAt);
     const time = new Date(result.uploadedAt).toLocaleTimeString('he-IL');
     if (!silent) setSyncStatus('✅ הועלה לענן בהצלחה (' + time + ')');
     return true;
@@ -1328,14 +1333,47 @@ async function syncDownload() {
       setSyncStatus('בוטל');
       return;
     }
+    const cloudTime = data._syncMeta?.uploadedAt;
     // Remove sync metadata before storing
     delete data._syncMeta;
     state = data;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (cloudTime) localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
     setSyncStatus('✅ הורד מהענן בהצלחה');
     render();
   } catch (e) {
     setSyncStatus('❌ ' + e.message, true);
+  }
+}
+
+// Auto-pull: silently check if cloud has newer data than what we have
+async function autoPullFromCloud(showStatus = false) {
+  if (localStorage.getItem(AUTO_SYNC_KEY) !== '1') return;
+  const code = localStorage.getItem(SYNC_CODE_KEY);
+  if (!code) return;
+
+  try {
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    if (!response.ok) return;
+    const cloudData = await response.json();
+    if (!cloudData || !cloudData.customers) return;
+
+    const cloudTime = cloudData._syncMeta?.uploadedAt;
+    const localKnownCloudTime = localStorage.getItem(LAST_CLOUD_TIME_KEY);
+
+    // If cloud time differs from what we last synced, there are new changes from another device
+    if (cloudTime && cloudTime !== localKnownCloudTime) {
+      delete cloudData._syncMeta;
+      state = cloudData;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
+      render();
+      if (showStatus) {
+        setSyncStatus('🔄 הורדו עדכונים חדשים מהענן (' + new Date().toLocaleTimeString('he-IL') + ')');
+      }
+    }
+  } catch (e) {
+    // Silent fail - we'll try again next interval
   }
 }
 
@@ -1378,6 +1416,23 @@ function initSyncUI() {
   if (savedCode && autoEnabled) {
     setSyncStatus('🔄 סנכרון אוטומטי פעיל');
   }
+
+  // Auto-pull on load (1 second delay to let UI settle)
+  setTimeout(() => autoPullFromCloud(false), 1500);
+
+  // Periodic auto-pull every 30 seconds while app is visible
+  setInterval(() => {
+    if (document.visibilityState === 'visible') {
+      autoPullFromCloud(true);
+    }
+  }, 30000);
+
+  // Auto-pull when user switches back to the tab/app
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      autoPullFromCloud(true);
+    }
+  });
 }
 
 // ==================== Override FAB based on tab ====================
