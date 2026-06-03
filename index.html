@@ -1412,9 +1412,37 @@ function autoSyncIfEnabled() {
   if (localStorage.getItem(AUTO_SYNC_KEY) !== '1') return;
   const code = localStorage.getItem(SYNC_CODE_KEY);
   if (!code) return;
+
   // Debounce: wait 2 seconds after last change before uploading
   clearTimeout(autoSyncDebounce);
-  autoSyncDebounce = setTimeout(() => syncUpload(true), 2000);
+  autoSyncDebounce = setTimeout(async () => {
+    // SAFETY: Check cloud first. If cloud has significantly more data than local,
+    // it means another device has newer data. Download instead of overwriting.
+    try {
+      const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+      if (response.ok) {
+        const cloudData = await response.json();
+        if (cloudData && cloudData.customers) {
+          const cloudTotal = cloudData.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
+          const localTotal = state.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
+
+          // If cloud has 5+ more transactions, it's authoritative - download it
+          if (cloudTotal > localTotal + 5) {
+            const cloudTime = cloudData._syncMeta?.uploadedAt;
+            delete cloudData._syncMeta;
+            state = cloudData;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            if (cloudTime) localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
+            render();
+            setSyncStatus('🛡️ ענן עדכני יותר - הורד אוטומטית במקום להעלות');
+            return;
+          }
+        }
+      }
+    } catch (e) { /* continue with upload */ }
+
+    syncUpload(true);
+  }, 2000);
 }
 
 function toggleAutoSync() {
