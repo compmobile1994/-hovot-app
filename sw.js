@@ -1,5 +1,5 @@
 // Service Worker - works offline
-const CACHE_NAME = 'debt-manager-v8';
+const CACHE_NAME = 'debt-manager-v9';
 const ASSETS = [
   './',
   './index.html',

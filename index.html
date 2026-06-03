@@ -581,7 +581,35 @@ function loadState() {
   if (saved) {
     try { state = JSON.parse(saved); } catch(e) { console.error('Bad saved state', e); }
   } else {
-    seedInitialData();
+    // No local data - try cloud BEFORE seeding (prevents seed from overwriting cloud)
+    tryRestoreFromCloud().then(restored => {
+      if (!restored) {
+        seedInitialData();
+      }
+    });
+  }
+}
+
+async function tryRestoreFromCloud() {
+  const code = localStorage.getItem(SYNC_CODE_KEY);
+  if (!code) return false;
+  try {
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    if (!response.ok) return false;
+    const cloudData = await response.json();
+    if (!cloudData || !cloudData.customers || cloudData.customers.length === 0) {
+      return false;
+    }
+    const cloudTime = cloudData._syncMeta?.uploadedAt;
+    delete cloudData._syncMeta;
+    state = cloudData;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (cloudTime) localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
+    render();
+    setSyncStatus('🔄 נתונים נטענו אוטומטית מהענן');
+    return true;
+  } catch(e) {
+    return false;
   }
 }
 
@@ -643,7 +671,9 @@ function seedInitialData() {
     { id: uid(), date: '2026-05-20 16:53', amount: 100, type: 'payment', text: 'שולם 100' }
   ];
 
-  saveState();
+  // Save WITHOUT triggering auto-sync (so seed data doesn't overwrite cloud)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  render();
 }
 
 // ==================== Render ====================
