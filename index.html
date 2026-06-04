@@ -374,7 +374,10 @@
   <header>
     <h1 style="display:flex;justify-content:space-between;align-items:center">
       <span>💼 חובות</span>
-      <button id="installBtn" style="display:none;background:rgba(255,255,255,0.25);border:1.5px solid rgba(255,255,255,0.4);color:white;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit" onclick="installApp()">📲 התקן</button>
+      <span style="display:flex;gap:6px;align-items:center">
+        <button id="quickSyncBtn" title="סנכרן עכשיו" style="background:rgba(255,255,255,0.25);border:1.5px solid rgba(255,255,255,0.4);color:white;padding:6px 10px;border-radius:18px;font-size:14px;cursor:pointer;font-family:inherit" onclick="quickSync()">🔄</button>
+        <button id="installBtn" style="display:none;background:rgba(255,255,255,0.25);border:1.5px solid rgba(255,255,255,0.4);color:white;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit" onclick="installApp()">📲 התקן</button>
+      </span>
     </h1>
     <div class="total-card">
       <div class="stat">
@@ -1384,6 +1387,63 @@ async function syncDownload() {
 }
 
 // Auto-pull: silently check if cloud has newer data than what we have
+// Quick sync - manual button at top of app for instant sync
+async function quickSync() {
+  const code = localStorage.getItem(SYNC_CODE_KEY);
+  if (!code) {
+    alert('צריך להגדיר קוד סנכרון בהגדרות תחילה');
+    return;
+  }
+  const btn = document.getElementById('quickSyncBtn');
+  if (btn) {
+    btn.textContent = '⏳';
+    btn.disabled = true;
+  }
+
+  try {
+    // First upload local if there are unsynced changes
+    if (localStorage.getItem(LOCAL_DIRTY_KEY) === '1') {
+      await syncUpload(true);
+    }
+    // Then fetch latest from cloud
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    if (response.ok) {
+      const cloudData = await response.json();
+      if (cloudData && cloudData.customers) {
+        const cloudTime = cloudData._syncMeta?.uploadedAt;
+        const localKnownCloudTime = localStorage.getItem(LAST_CLOUD_TIME_KEY);
+        if (cloudTime && cloudTime !== localKnownCloudTime) {
+          const localModified = localStorage.getItem(LOCAL_MODIFIED_KEY);
+          // Manual sync - if cloud is newer than local modified, download
+          if (!localModified || new Date(cloudTime) > new Date(localModified)) {
+            delete cloudData._syncMeta;
+            state = cloudData;
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
+            localStorage.removeItem(LOCAL_DIRTY_KEY);
+            render();
+          }
+        }
+      }
+    }
+    if (btn) btn.textContent = '✅';
+    setTimeout(() => {
+      if (btn) {
+        btn.textContent = '🔄';
+        btn.disabled = false;
+      }
+    }, 1500);
+  } catch (e) {
+    if (btn) {
+      btn.textContent = '❌';
+      setTimeout(() => {
+        btn.textContent = '🔄';
+        btn.disabled = false;
+      }, 2000);
+    }
+  }
+}
+
 async function autoPullFromCloud(showStatus = false) {
   if (localStorage.getItem(AUTO_SYNC_KEY) !== '1') return;
   const code = localStorage.getItem(SYNC_CODE_KEY);
@@ -1522,18 +1582,23 @@ function initSyncUI() {
   // Auto-pull on load (1 second delay to let UI settle)
   setTimeout(() => autoPullFromCloud(false), 1500);
 
-  // Periodic auto-pull every 30 seconds while app is visible
+  // Periodic auto-pull every 5 minutes (reduced from 30s to save API calls)
   setInterval(() => {
     if (document.visibilityState === 'visible') {
       autoPullFromCloud(true);
     }
-  }, 30000);
+  }, 300000); // 5 minutes
 
-  // Auto-pull when user switches back to the tab/app
+  // Auto-pull when user switches back to the tab/app (this is the main sync trigger)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       autoPullFromCloud(true);
     }
+  });
+
+  // Also pull when the window gets focus (covers desktop usage)
+  window.addEventListener('focus', () => {
+    autoPullFromCloud(true);
   });
 }
 
