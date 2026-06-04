@@ -584,6 +584,7 @@ const STORAGE_KEY = 'debt_manager_v1';
 let state = {
   customers: [],
   pendingImports: [],
+  dataVersion: 0, // Monotonic counter - increments on each saveState. Used for sync conflict resolution.
   meta: { createdAt: new Date().toISOString() }
 };
 
@@ -666,6 +667,8 @@ function saveStateRaw() {
 }
 
 function saveState() {
+  // Increment version counter - monotonic, used for sync conflict resolution
+  state.dataVersion = (state.dataVersion || 0) + 1;
   saveStateRaw();
   // Mark local as having unsynced changes (will be cleared after successful upload)
   localStorage.setItem(LOCAL_MODIFIED_KEY, new Date().toISOString());
@@ -1586,34 +1589,37 @@ async function autoPullFromCloud(showStatus = false) {
         return;
       }
 
-      // SAFETY 2: Don't auto-download if local was modified after cloud was uploaded
-      const localModified = localStorage.getItem(LOCAL_MODIFIED_KEY);
-      if (localModified && new Date(localModified) > new Date(cloudTime)) {
+      // SAFETY 2 (NEW): Use version counter - more reliable than timestamps (no clock skew)
+      const cloudVersion = cloudData.dataVersion || 0;
+      const localVersion = state.dataVersion || 0;
+      if (localVersion > cloudVersion) {
         if (showStatus) {
-          setSyncStatus('🛡️ השינויים המקומיים שלך חדשים יותר מהענן');
+          setSyncStatus('🛡️ גרסה מקומית (' + localVersion + ') חדשה יותר מהענן (' + cloudVersion + ')');
         }
         return;
       }
 
-      // SAFETY 3: Don't auto-download if local has more data than cloud
-      const cloudTotal = cloudData.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
-      const localTotal = state.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
+      // SAFETY 3: Fallback timestamp check (for old data without version)
+      const localModified = localStorage.getItem(LOCAL_MODIFIED_KEY);
+      if (localModified && cloudVersion === 0 && new Date(localModified) > new Date(cloudTime)) {
+        if (showStatus) setSyncStatus('🛡️ שינויים מקומיים חדשים יותר מהענן');
+        return;
+      }
 
-      if (localTotal > cloudTotal + 3) {
-        if (showStatus) {
-          setSyncStatus('🛡️ ענן יש פחות נתונים - לא יורד אוטומטית (יש לך ' + localTotal + ' תנועות, בענן ' + cloudTotal + ')');
-        }
+      // SAFETY 4: Validate cloud data shape
+      if (!validateStateShape(cloudData)) {
+        if (showStatus) setSyncStatus('⚠️ נתוני הענן לא תקינים');
         return;
       }
 
       delete cloudData._syncMeta;
       state = cloudData;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      saveStateRaw();
       localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
-      localStorage.removeItem(LOCAL_DIRTY_KEY); // Now in sync with cloud
+      localStorage.removeItem(LOCAL_DIRTY_KEY);
       render();
       if (showStatus) {
-        setSyncStatus('🔄 הורדו עדכונים חדשים מהענן (' + new Date().toLocaleTimeString('he-IL') + ')');
+        setSyncStatus('🔄 הורדו עדכונים חדשים מהענן (v' + (cloudData.dataVersion || 0) + ')');
       }
     }
   } catch (e) {
