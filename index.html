@@ -1716,7 +1716,8 @@ function autoSyncIfEnabled() {
   const code = localStorage.getItem(SYNC_CODE_KEY);
   if (!code) return;
 
-  // Debounce: wait 2 seconds after last change before uploading
+  // Debounce: wait 10 seconds after last change before uploading
+  // This batches rapid edits into a single upload, saving API calls
   clearTimeout(autoSyncDebounce);
   autoSyncDebounce = setTimeout(async () => {
     // SAFETY: Check cloud first. If cloud has unknown/newer changes, we must not overwrite.
@@ -1754,7 +1755,7 @@ function autoSyncIfEnabled() {
     } catch (e) { /* continue with upload */ }
 
     syncUpload(true);
-  }, 2000);
+  }, 10000); // 10 second debounce
 }
 
 function toggleAutoSync() {
@@ -1790,23 +1791,34 @@ function initSyncUI() {
   // Auto-pull on load (1 second delay to let UI settle)
   setTimeout(() => autoPullFromCloud(false), 1500);
 
-  // Periodic auto-pull every 5 minutes (reduced from 30s to save API calls)
-  setInterval(() => {
-    if (document.visibilityState === 'visible') {
-      autoPullFromCloud(true);
-    }
-  }, 300000); // 5 minutes
+  // No more periodic polling - was causing too many API calls!
+  // Auto-pull now only triggers on:
+  // - App load (above)
+  // - Visibility change (switching back to app)
+  // - Window focus (returning to browser tab)
+  // - Manual 🔄 button at the top of the app
 
-  // Auto-pull when user switches back to the tab/app (this is the main sync trigger)
+  // Auto-pull when user switches back to the tab/app
+  let lastPullTime = 0;
+  const minPullInterval = 30000; // Don't pull more than once per 30s
+
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-      autoPullFromCloud(true);
+      const now = Date.now();
+      if (now - lastPullTime > minPullInterval) {
+        lastPullTime = now;
+        autoPullFromCloud(true);
+      }
     }
   });
 
   // Also pull when the window gets focus (covers desktop usage)
   window.addEventListener('focus', () => {
-    autoPullFromCloud(true);
+    const now = Date.now();
+    if (now - lastPullTime > minPullInterval) {
+      lastPullTime = now;
+      autoPullFromCloud(true);
+    }
   });
 }
 
