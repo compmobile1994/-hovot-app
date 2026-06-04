@@ -1,5 +1,5 @@
 // Service Worker - works offline
-const CACHE_NAME = 'debt-manager-v14';
+const CACHE_NAME = 'debt-manager-v15';
 const ASSETS = [
   './',
   './index.html',
@@ -25,11 +25,22 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url);
+
+  // CRITICAL FIX: Never cache API calls or non-GET requests
+  // The /api/sync endpoint must always go directly to the network
+  // to ensure fresh sync data and not cache stale responses.
+  if (url.pathname.startsWith('/api/') || event.request.method !== 'GET') {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
+  // For all other (static) GET requests: cache-first strategy
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
-        // Cache new requests for offline use
+        // Cache new static requests for offline use
         if (response && response.status === 200 && response.type === 'basic') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
