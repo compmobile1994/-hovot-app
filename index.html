@@ -2,7 +2,7 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <meta name="theme-color" content="#1e40af" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -204,6 +204,9 @@
     font-size: 22px;
     cursor: pointer;
     color: #6b7280;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px;
   }
 
   /* Form */
@@ -275,8 +278,10 @@
     color: #9ca3af;
     font-size: 18px;
     cursor: pointer;
-    margin-right: 8px;
-    padding: 4px 8px;
+    margin-right: 6px;
+    padding: 10px 12px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   /* Pending imports */
@@ -431,6 +436,9 @@
       <div style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px">
         בחר קוד סנכרון (לפחות 6 תווים) - הזן את אותו הקוד בפלאפון ובמחשב כדי לסנכרן את הנתונים.
       </div>
+      <div style="font-size:11px;background:#fef3c7;color:#92400e;padding:8px 10px;border-radius:8px;margin-bottom:12px;line-height:1.5">
+        ⚠️ <b>חשוב לאבטחה:</b> הקוד הזה הוא כמו סיסמה - כל מי שיש לו אותו יוכל לקרוא את הנתונים שלך. בחר קוד ייחודי וקשה לניחוש (לדוגמה: <code>dvir-h-29x9-secret</code>).
+      </div>
       <div class="form-group">
         <label class="form-label">קוד סנכרון</label>
         <input type="text" id="syncCodeInput" class="form-input" placeholder="לדוגמה: dvir-1994" maxlength="50" autocomplete="off" />
@@ -476,12 +484,12 @@
 </div>
 
 <!-- FAB -->
-<button class="fab" onclick="openCustomerModal()">+</button>
+<button class="fab" onclick="openCustomerModal()" aria-label="הוסף לקוח חדש" title="הוסף לקוח חדש">+</button>
 
 <!-- Customer Modal -->
 <div class="modal-overlay" id="customerModal">
   <div class="modal">
-    <button class="modal-close" onclick="closeModal('customerModal')">×</button>
+    <button class="modal-close" onclick="closeModal('customerModal')" aria-label="סגור">×</button>
     <h2 id="customerModalTitle">חייב חדש</h2>
     <div class="form-group">
       <label class="form-label">סוג</label>
@@ -505,7 +513,7 @@
 <!-- Transaction Modal -->
 <div class="modal-overlay" id="transactionModal">
   <div class="modal">
-    <button class="modal-close" onclick="closeModal('transactionModal')">×</button>
+    <button class="modal-close" onclick="closeModal('transactionModal')" aria-label="סגור">×</button>
     <h2 id="transactionModalTitle">תנועה חדשה</h2>
     <div class="type-toggle">
       <button id="typeDebt" class="active debt" onclick="setTransactionType('debt')">➕ חוב חדש</button>
@@ -543,7 +551,7 @@
 <!-- Customer Detail Modal -->
 <div class="modal-overlay" id="detailModal">
   <div class="modal">
-    <button class="modal-close" onclick="closeModal('detailModal')">×</button>
+    <button class="modal-close" onclick="closeModal('detailModal')" aria-label="סגור">×</button>
     <div id="detailContent"></div>
   </div>
 </div>
@@ -551,7 +559,7 @@
 <!-- Pending Assign Modal -->
 <div class="modal-overlay" id="assignModal">
   <div class="modal">
-    <button class="modal-close" onclick="closeModal('assignModal')">×</button>
+    <button class="modal-close" onclick="closeModal('assignModal')" aria-label="סגור">×</button>
     <h2>שייך ללקוח</h2>
     <div id="assignPendingInfo" style="background: #f3f4f6; padding: 12px; border-radius: 10px; margin-bottom: 14px;"></div>
     <div class="form-group">
@@ -579,17 +587,40 @@ let state = {
   meta: { createdAt: new Date().toISOString() }
 };
 
-function loadState() {
+// Validate that imported/cloud data has the expected shape
+function validateStateShape(data) {
+  if (!data || typeof data !== 'object') return false;
+  if (!Array.isArray(data.customers)) return false;
+  for (const c of data.customers) {
+    if (!c || typeof c !== 'object') return false;
+    if (typeof c.id !== 'string' || typeof c.name !== 'string') return false;
+    if (!Array.isArray(c.transactions)) return false;
+    for (const t of c.transactions) {
+      if (!t || typeof t !== 'object') return false;
+      if (typeof t.amount !== 'number') return false;
+      if (typeof t.type !== 'string' || !['debt','payment','discount'].includes(t.type)) return false;
+    }
+  }
+  return true;
+}
+
+async function loadState() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
-    try { state = JSON.parse(saved); } catch(e) { console.error('Bad saved state', e); }
-  } else {
-    // No local data - try cloud BEFORE seeding (prevents seed from overwriting cloud)
-    tryRestoreFromCloud().then(restored => {
-      if (!restored) {
-        seedInitialData();
+    try {
+      const parsed = JSON.parse(saved);
+      if (validateStateShape(parsed)) {
+        state = parsed;
+      } else {
+        console.error('Saved state failed validation - keeping defaults');
       }
-    });
+    } catch(e) { console.error('Bad saved state', e); }
+    return;
+  }
+  // No local data - try cloud BEFORE seeding (prevents seed from overwriting cloud)
+  const restored = await tryRestoreFromCloud();
+  if (!restored) {
+    seedInitialData();
   }
 }
 
@@ -603,10 +634,15 @@ async function tryRestoreFromCloud() {
     if (!cloudData || !cloudData.customers || cloudData.customers.length === 0) {
       return false;
     }
+    // SAFETY: validate cloud data before replacing state
+    if (!validateStateShape(cloudData)) {
+      console.error('Cloud data failed validation - rejecting');
+      return false;
+    }
     const cloudTime = cloudData._syncMeta?.uploadedAt;
     delete cloudData._syncMeta;
     state = cloudData;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    saveStateRaw();
     if (cloudTime) localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
     render();
     setSyncStatus('🔄 נתונים נטענו אוטומטית מהענן');
@@ -616,8 +652,21 @@ async function tryRestoreFromCloud() {
   }
 }
 
+// Save state to localStorage with error handling (e.g. quota exceeded)
+function saveStateRaw() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch(e) {
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      alert('⚠️ אחסון מקומי מלא!\n\nאנא לחץ הגדרות → "📥 ייצוא לקובץ" לגיבוי, ואז שקול למחוק תנועות ישנות.');
+    } else {
+      console.error('Save failed:', e);
+    }
+  }
+}
+
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  saveStateRaw();
   // Mark local as having unsynced changes (will be cleared after successful upload)
   localStorage.setItem(LOCAL_MODIFIED_KEY, new Date().toISOString());
   localStorage.setItem(LOCAL_DIRTY_KEY, '1');
@@ -891,9 +940,18 @@ function saveCustomer() {
 
 function deleteCustomer(id) {
   if (!confirm('למחוק את החייב ואת כל התנועות שלו?')) return;
+  const customer = state.customers.find(c => c.id === id);
+  if (!customer) return;
+  // Save snapshot for undo
+  const snapshot = JSON.parse(JSON.stringify(customer));
   state.customers = state.customers.filter(c => c.id !== id);
   closeModal('detailModal');
   saveState();
+  // Show undo toast
+  showUndoToast(`הלקוח "${customer.name}" נמחק`, () => {
+    state.customers.push(snapshot);
+    saveState();
+  });
 }
 
 // ==================== Transactions ====================
@@ -955,8 +1013,8 @@ function populateDateSelects() {
     opt.textContent = name;
     monthEl.appendChild(opt);
   });
-  const now = new Date(2026, 5, 1); // June 2026
-  for (let y = 2024; y <= 2030; y++) {
+  const currentYear = new Date().getFullYear();
+  for (let y = currentYear - 2; y <= currentYear + 3; y++) {
     const opt = document.createElement('option');
     opt.value = String(y);
     opt.textContent = y;
@@ -1078,11 +1136,52 @@ function saveTransaction() {
 }
 
 function deleteTransaction(customerId, transactionId) {
-  if (!confirm('למחוק את התנועה?')) return;
   const c = state.customers.find(x => x.id === customerId);
-  c.transactions = c.transactions.filter(t => t.id !== transactionId);
+  if (!c) return;
+  const t = c.transactions.find(x => x.id === transactionId);
+  if (!t) return;
+  // Save a snapshot for undo
+  const snapshot = JSON.parse(JSON.stringify(t));
+  c.transactions = c.transactions.filter(x => x.id !== transactionId);
   saveState();
   showCustomerDetail(customerId);
+  // Show undo toast
+  showUndoToast('התנועה נמחקה', () => {
+    const cust = state.customers.find(x => x.id === customerId);
+    if (cust) {
+      cust.transactions.push(snapshot);
+      saveState();
+      showCustomerDetail(customerId);
+    }
+  });
+}
+
+// Toast with undo button - lets user revert destructive actions for 6 seconds
+let _undoToastTimer = null;
+function showUndoToast(message, onUndo) {
+  let toast = document.getElementById('undoToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'undoToast';
+    toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1f2937;color:white;padding:12px 16px;border-radius:12px;display:flex;align-items:center;gap:14px;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-size:14px;max-width:90vw';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = '';
+  const msg = document.createElement('span');
+  msg.textContent = message;
+  const undoBtn = document.createElement('button');
+  undoBtn.textContent = '↩️ ביטול';
+  undoBtn.style.cssText = 'background:#10b981;color:white;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit;font-size:14px;min-height:40px';
+  undoBtn.onclick = () => {
+    if (onUndo) onUndo();
+    toast.style.display = 'none';
+    clearTimeout(_undoToastTimer);
+  };
+  toast.appendChild(msg);
+  toast.appendChild(undoBtn);
+  toast.style.display = 'flex';
+  clearTimeout(_undoToastTimer);
+  _undoToastTimer = setTimeout(() => { toast.style.display = 'none'; }, 6000);
 }
 
 // ==================== Customer Detail ====================
@@ -1221,7 +1320,7 @@ function confirmAssign() {
   if (customerId === '__new__') {
     const name = prompt('שם הלקוח החדש:');
     if (!name) return;
-    c = { id: uid(), name: name.trim(), note: '', transactions: [] };
+    c = { id: uid(), name: name.trim(), note: '', customerType: 'business', transactions: [] };
     state.customers.push(c);
   } else {
     c = state.customers.find(x => x.id === customerId);
@@ -1264,11 +1363,14 @@ function importData(event) {
   reader.onload = e => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!data.customers) throw new Error('Bad file format');
-      if (!confirm('הייבוא ידרוס את הנתונים הקיימים. להמשיך?')) return;
+      if (!validateStateShape(data)) {
+        throw new Error('הקובץ אינו תקין - מבנה הנתונים פגום');
+      }
+      if (!confirm(`הייבוא ידרוס את הנתונים הקיימים (יש כרגע ${state.customers.length} לקוחות, ייובאו ${data.customers.length}). להמשיך?`)) return;
       state = data;
       if (!state.pendingImports) state.pendingImports = [];
       saveState();
+      render();
       alert('הייבוא הצליח!');
     } catch(err) {
       alert('שגיאה בקריאת הקובץ: ' + err.message);
@@ -1329,11 +1431,15 @@ async function syncUpload(silent = false) {
   if (!validateSyncCode(code)) return false;
   saveSyncCode(code);
   if (!silent) setSyncStatus('⏳ מעלה לענן...');
+  // Capture the local modified timestamp BEFORE upload starts (compare-and-swap)
+  const localModifiedAtStart = localStorage.getItem(LOCAL_MODIFIED_KEY);
+  // Capture a snapshot of state for upload (avoid race with concurrent edits)
+  const snapshot = JSON.stringify(state);
   try {
     const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(state)
+      body: snapshot
     });
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}));
@@ -1341,8 +1447,12 @@ async function syncUpload(silent = false) {
     }
     const result = await response.json();
     localStorage.setItem(LAST_CLOUD_TIME_KEY, result.uploadedAt);
-    // Clear dirty flag - our local data is now in sync with cloud
-    localStorage.removeItem(LOCAL_DIRTY_KEY);
+    // Compare-and-swap: only clear dirty flag if no NEW changes were made during upload
+    const currentLocalModified = localStorage.getItem(LOCAL_MODIFIED_KEY);
+    if (currentLocalModified === localModifiedAtStart) {
+      localStorage.removeItem(LOCAL_DIRTY_KEY);
+    }
+    // else: a new change happened during upload, leave dirty=1 to re-sync
     const time = new Date(result.uploadedAt).toLocaleTimeString('he-IL');
     if (!silent) setSyncStatus('✅ הועלה לענן בהצלחה (' + time + ')');
     return true;
@@ -1619,11 +1729,14 @@ document.querySelector('.fab').onclick = () => {
 };
 
 // ==================== Init ====================
-loadState();
-renderCategoryChips();
-populateDateSelects();
-render();
-initSyncUI();
+// Initialize app - loadState is async to allow cloud restore before seeding
+(async function init() {
+  renderCategoryChips();
+  populateDateSelects();
+  await loadState(); // Wait for cloud restore or seed before first render
+  render();
+  initSyncUI();
+})();
 
 // Register service worker for offline support
 if ('serviceWorker' in navigator) {
