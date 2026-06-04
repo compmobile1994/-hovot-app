@@ -615,6 +615,9 @@ async function tryRestoreFromCloud() {
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // Mark local as having unsynced changes (will be cleared after successful upload)
+  localStorage.setItem(LOCAL_MODIFIED_KEY, new Date().toISOString());
+  localStorage.setItem(LOCAL_DIRTY_KEY, '1');
   render();
   if (typeof autoSyncIfEnabled === 'function') autoSyncIfEnabled();
 }
@@ -1283,6 +1286,8 @@ const SYNC_API = '/api/sync';
 const SYNC_CODE_KEY = 'sync_code';
 const AUTO_SYNC_KEY = 'auto_sync_enabled';
 const LAST_CLOUD_TIME_KEY = 'last_cloud_time';
+const LOCAL_MODIFIED_KEY = 'local_last_modified';
+const LOCAL_DIRTY_KEY = 'local_has_unsynced_changes';
 
 function setSyncStatus(msg, isError = false) {
   const el = document.getElementById('syncStatus');
@@ -1333,6 +1338,8 @@ async function syncUpload(silent = false) {
     }
     const result = await response.json();
     localStorage.setItem(LAST_CLOUD_TIME_KEY, result.uploadedAt);
+    // Clear dirty flag - our local data is now in sync with cloud
+    localStorage.removeItem(LOCAL_DIRTY_KEY);
     const time = new Date(result.uploadedAt).toLocaleTimeString('he-IL');
     if (!silent) setSyncStatus('✅ הועלה לענן בהצלחה (' + time + ')');
     return true;
@@ -1382,6 +1389,17 @@ async function autoPullFromCloud(showStatus = false) {
   const code = localStorage.getItem(SYNC_CODE_KEY);
   if (!code) return;
 
+  // CRITICAL: Don't auto-pull if local has unsaved changes
+  // This prevents the bug where user makes a change, then auto-pull overwrites it before auto-upload completes
+  if (localStorage.getItem(LOCAL_DIRTY_KEY) === '1') {
+    // Local has unsynced changes - try to upload them instead
+    if (showStatus) {
+      setSyncStatus('💾 יש שינויים מקומיים שעדיין לא הועלו - מעלה...');
+    }
+    syncUpload(true);
+    return;
+  }
+
   try {
     const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
     if (!response.ok) return;
@@ -1393,13 +1411,25 @@ async function autoPullFromCloud(showStatus = false) {
 
     // If cloud time differs from what we last synced, there are new changes from another device
     if (cloudTime && cloudTime !== localKnownCloudTime) {
-      // SAFETY: Don't auto-download if local has more data than cloud
-      // This prevents accidentally overwriting good local data with worse cloud data
+      // SAFETY 1: Local has unsaved changes (double-check)
+      if (localStorage.getItem(LOCAL_DIRTY_KEY) === '1') {
+        return;
+      }
+
+      // SAFETY 2: Don't auto-download if local was modified after cloud was uploaded
+      const localModified = localStorage.getItem(LOCAL_MODIFIED_KEY);
+      if (localModified && new Date(localModified) > new Date(cloudTime)) {
+        if (showStatus) {
+          setSyncStatus('🛡️ השינויים המקומיים שלך חדשים יותר מהענן');
+        }
+        return;
+      }
+
+      // SAFETY 3: Don't auto-download if local has more data than cloud
       const cloudTotal = cloudData.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
       const localTotal = state.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
 
       if (localTotal > cloudTotal + 3) {
-        // Local has significantly more data - don't replace it
         if (showStatus) {
           setSyncStatus('🛡️ ענן יש פחות נתונים - לא יורד אוטומטית (יש לך ' + localTotal + ' תנועות, בענן ' + cloudTotal + ')');
         }
@@ -1410,6 +1440,7 @@ async function autoPullFromCloud(showStatus = false) {
       state = cloudData;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
+      localStorage.removeItem(LOCAL_DIRTY_KEY); // Now in sync with cloud
       render();
       if (showStatus) {
         setSyncStatus('🔄 הורדו עדכונים חדשים מהענן (' + new Date().toLocaleTimeString('he-IL') + ')');
