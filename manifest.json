@@ -2,7 +2,7 @@
   "name": "חובות",
   "short_name": "חובות",
   "description": "מעקב אחר חובות לקוחות וחברים",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
