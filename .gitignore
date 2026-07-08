@@ -10,3 +10,11 @@ Thumbs.db
 # Local Netlify folder
 .netlify
 node_modules
+
+# Personal data / dev artifacts - must NEVER be deployed publicly
+*.zip
+chat_flex.txt
+chat_iphonezol.txt
+recovery-backup.json
+extract_flex/
+extract_iphonezol/
