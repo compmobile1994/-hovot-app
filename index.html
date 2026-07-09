@@ -917,12 +917,12 @@ document.querySelectorAll('.tab').forEach(tab => {
 // Track open modals as a stack so the Android/browser back button can close
 // them one at a time instead of dismissing the whole app.
 const modalStack = [];
-let backButtonHandlerInstalled = false;
-let isHandlingPopstate = false; // guards against re-entrant popstate/close loops
+let closingViaBack = false;    // true while popstate handler is closing a modal
+let awaitingExitPress = false; // true if user pressed Back at root once (waiting for 2nd press)
+let awaitingExitTimer = null;
+const EXIT_CONFIRM_MS = 2500;
 
-function openModal(id) {
-  const modal = document.getElementById(id);
-  // Stack modal above any currently-open modal
+function _showModalDom(modal) {
   const openModals = Array.from(document.querySelectorAll('.modal-overlay.active'));
   let maxZ = 199;
   openModals.forEach(m => {
@@ -932,39 +932,95 @@ function openModal(id) {
   });
   modal.style.zIndex = maxZ + 1;
   modal.classList.add('active');
-  // Track in stack + push a history entry so Back closes THIS modal
+}
+function _hideModalDom(modal) {
+  modal.classList.remove('active');
+  modal.style.zIndex = '';
+}
+
+function openModal(id) {
+  const modal = document.getElementById(id);
+  if (!modal) return;
+  _showModalDom(modal);
+  if (modalStack.includes(id)) return; // already tracked (e.g. showCustomerDetail re-render)
   modalStack.push(id);
-  try {
-    history.pushState({ modalId: id, stackDepth: modalStack.length }, '');
-  } catch(e) { /* history API might be limited in some contexts */ }
-  installBackButtonHandler();
+  // Cancel any pending exit-awaiting; re-arm root sentinel if it was popped
+  if (awaitingExitPress) {
+    awaitingExitPress = false;
+    if (awaitingExitTimer) { clearTimeout(awaitingExitTimer); awaitingExitTimer = null; }
+    try { history.pushState({ appRoot: true }, ''); } catch(e) {}
+  }
+  try { history.pushState({ modalId: id }, ''); } catch(e) {}
 }
 
 function closeModal(id) {
   const modal = document.getElementById(id);
   if (!modal) return;
-  modal.classList.remove('active');
-  modal.style.zIndex = '';
-  // Remove from tracking stack
-  const idx = modalStack.lastIndexOf(id);
-  if (idx !== -1) modalStack.splice(idx, 1);
-  // Pop the matching history entry, unless we're already handling popstate
-  // (the browser has already popped it in that case)
-  if (!isHandlingPopstate) {
-    try { history.back(); } catch(e) { /* ignore */ }
+  if (closingViaBack) {
+    // Called from popstate - browser already popped the entry
+    _hideModalDom(modal);
+    const idx = modalStack.lastIndexOf(id);
+    if (idx !== -1) modalStack.splice(idx, 1);
+    return;
+  }
+  if (modalStack.includes(id)) {
+    // User-initiated close - unwind history to trigger popstate cleanup
+    try { history.back(); } catch(e) {
+      _hideModalDom(modal);
+      const idx = modalStack.lastIndexOf(id);
+      if (idx !== -1) modalStack.splice(idx, 1);
+    }
+  } else {
+    _hideModalDom(modal);
   }
 }
 
-function installBackButtonHandler() {
-  if (backButtonHandlerInstalled) return;
-  backButtonHandlerInstalled = true;
+// Simple message toast (no action). Reuses the undoToast element.
+function showInfoToast(message, ms) {
+  ms = ms || 2500;
+  let toast = document.getElementById('undoToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'undoToast';
+    toast.style.cssText = 'position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:#1f2937;color:white;padding:12px 18px;border-radius:12px;display:flex;align-items:center;gap:14px;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-size:14px;max-width:90vw';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = '';
+  const msg = document.createElement('span');
+  msg.textContent = message;
+  toast.appendChild(msg);
+  toast.style.display = 'flex';
+  clearTimeout(_undoToastTimer);
+  _undoToastTimer = setTimeout(() => { toast.style.display = 'none'; }, ms);
+}
+
+function setupBackButtonHandling() {
+  // Push initial "root sentinel" so 1st Back press at root can be intercepted.
+  try { history.pushState({ appRoot: true }, ''); } catch(e) {}
+
   window.addEventListener('popstate', () => {
-    // If there's an open modal, close only the top-most one
-    if (modalStack.length === 0) return;
-    isHandlingPopstate = true;
-    const topId = modalStack[modalStack.length - 1];
-    closeModal(topId);
-    isHandlingPopstate = false;
+    if (modalStack.length > 0) {
+      // User pressed Back - close top modal
+      closingViaBack = true;
+      const topId = modalStack[modalStack.length - 1];
+      closeModal(topId);
+      closingViaBack = false;
+      return;
+    }
+    // At root with no modal open - implement "press again to exit"
+    if (awaitingExitPress) {
+      // 2nd press within window - allow exit (don't push, let history be empty)
+      awaitingExitPress = false;
+      if (awaitingExitTimer) { clearTimeout(awaitingExitTimer); awaitingExitTimer = null; }
+      return;
+    }
+    // 1st press at root - warn
+    awaitingExitPress = true;
+    showInfoToast('לחץ שוב ליציאה');
+    awaitingExitTimer = setTimeout(() => {
+      awaitingExitPress = false;
+      awaitingExitTimer = null;
+    }, EXIT_CONFIRM_MS);
   });
 }
 document.querySelectorAll('.modal-overlay').forEach(o => {
@@ -1920,6 +1976,7 @@ document.querySelector('.fab').onclick = () => {
   await loadState(); // Wait for cloud restore or seed before first render
   render();
   initSyncUI();
+  setupBackButtonHandling(); // Enable back-button-closes-modal + double-back-to-exit
 })();
 
 // Register service worker for offline support
