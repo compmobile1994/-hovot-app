@@ -1,7 +1,8 @@
-// Service Worker - works offline
+// Service Worker - works offline, but ALWAYS fetches fresh HTML/JS for updates
 const CACHE_NAME = 'debt-manager-v21';
 const ASSETS = [
   './',
+  './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
@@ -26,20 +27,35 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // CRITICAL FIX: Never cache API calls or non-GET requests
-  // The /api/sync endpoint must always go directly to the network
-  // to ensure fresh sync data and not cache stale responses.
+  // CRITICAL: Never cache API calls or non-GET requests
+  // /api/sync must always go directly to the network for fresh data.
   if (url.pathname.startsWith('/api/') || event.request.method !== 'GET') {
     event.respondWith(fetch(event.request));
     return;
   }
 
-  // For all other (static) GET requests: cache-first strategy
+  // NETWORK-FIRST for navigation (HTML pages) - so users get updates immediately
+  const isNavigation = event.request.mode === 'navigate' ||
+    (event.request.headers.get('accept') || '').includes('text/html');
+  if (isNavigation) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        // Cache the fresh response for offline fallback
+        if (response && response.status === 200 && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => caches.match(event.request).then(cached => cached || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // CACHE-FIRST for other static assets (icons, manifest) - they rarely change
   event.respondWith(
     caches.match(event.request).then(cached => {
       if (cached) return cached;
       return fetch(event.request).then(response => {
-        // Cache new static requests for offline use
         if (response && response.status === 200 && response.type === 'basic') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));

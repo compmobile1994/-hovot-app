@@ -59,7 +59,8 @@
   }
   .tab {
     flex: 1;
-    padding: 10px;
+    padding: 12px;
+    min-height: 44px;
     text-align: center;
     border-radius: 8px;
     font-weight: 600;
@@ -115,7 +116,8 @@
     padding-bottom: 4px;
   }
   .filter-pill {
-    padding: 6px 14px;
+    padding: 10px 16px;
+    min-height: 40px;
     border-radius: 20px;
     background: white;
     border: 1.5px solid #e5e7eb;
@@ -296,7 +298,8 @@
   .pending-meta { font-size: 12px; color: #6b7280; margin-bottom: 10px; }
   .pending-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .pending-actions button {
-    padding: 6px 10px;
+    padding: 10px 12px;
+    min-height: 40px;
     border: 1px solid #e5e7eb;
     background: white;
     border-radius: 8px;
@@ -342,7 +345,8 @@
     margin-bottom: 4px;
   }
   .chip {
-    padding: 7px 12px;
+    padding: 10px 14px;
+    min-height: 40px;
     border: 1.5px solid #e5e7eb;
     background: white;
     border-radius: 20px;
@@ -447,7 +451,7 @@
       </div>
       <div class="form-group">
         <label class="form-label">קוד סנכרון</label>
-        <input type="text" id="syncCodeInput" class="form-input" placeholder="לדוגמה: dvir-1994" maxlength="50" autocomplete="off" />
+        <input type="text" id="syncCodeInput" class="form-input" placeholder="לדוגמה: a7x-2q9-k4rmn-secret" maxlength="100" autocomplete="off" spellcheck="false" />
       </div>
       <div class="backup-buttons">
         <button class="btn btn-primary" onclick="syncUpload()" style="font-size:13px">📤 העלה לענן</button>
@@ -466,8 +470,8 @@
     <div class="backup-section">
       <h3>📁 גיבוי לקובץ</h3>
       <div class="backup-buttons">
-        <button class="btn btn-primary" onclick="exportData()">📥 ייצוא לקובץ</button>
-        <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()">📤 ייבוא קובץ</button>
+        <button class="btn btn-primary" onclick="exportData()" aria-label="ייצוא לקובץ">📤 ייצוא לקובץ</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('importFile').click()" aria-label="ייבוא קובץ">📥 ייבוא קובץ</button>
         <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)" />
       </div>
     </div>
@@ -598,17 +602,25 @@ let state = {
   meta: { createdAt: new Date().toISOString() }
 };
 
+// Safe ID regex - prevents XSS via crafted IDs in attributes
+const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+function isSafeId(s) { return typeof s === 'string' && SAFE_ID_RE.test(s); }
+
 // Validate that imported/cloud data has the expected shape
 function validateStateShape(data) {
   if (!data || typeof data !== 'object') return false;
   if (!Array.isArray(data.customers)) return false;
+  if (data.customers.length > 1000) return false;
   for (const c of data.customers) {
     if (!c || typeof c !== 'object') return false;
-    if (typeof c.id !== 'string' || typeof c.name !== 'string') return false;
+    if (!isSafeId(c.id)) return false; // ID must be safe for HTML attrs
+    if (typeof c.name !== 'string' || c.name.length > 200) return false;
     if (!Array.isArray(c.transactions)) return false;
+    if (c.transactions.length > 10000) return false;
     for (const t of c.transactions) {
       if (!t || typeof t !== 'object') return false;
-      if (typeof t.amount !== 'number') return false;
+      if (!isSafeId(t.id)) return false;
+      if (typeof t.amount !== 'number' || !isFinite(t.amount)) return false;
       if (typeof t.type !== 'string' || !['debt','payment','discount'].includes(t.type)) return false;
     }
   }
@@ -622,10 +634,16 @@ async function loadState() {
       const parsed = JSON.parse(saved);
       if (validateStateShape(parsed)) {
         state = parsed;
-      } else {
-        console.error('Saved state failed validation - keeping defaults');
+        return;
       }
-    } catch(e) { console.error('Bad saved state', e); }
+      console.error('Saved state failed validation - trying cloud recovery');
+    } catch(e) {
+      console.error('Corrupted localStorage - trying cloud recovery', e);
+    }
+    // Local data was corrupted - try cloud recovery BEFORE giving up
+    const restored = await tryRestoreFromCloud();
+    if (restored) return;
+    console.error('Cloud recovery also failed - state kept at empty defaults');
     return;
   }
   // No local data - try cloud BEFORE seeding (prevents seed from overwriting cloud)
@@ -669,7 +687,7 @@ function saveStateRaw() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch(e) {
     if (e.name === 'QuotaExceededError' || e.code === 22) {
-      alert('⚠️ אחסון מקומי מלא!\n\nאנא לחץ הגדרות → "📥 ייצוא לקובץ" לגיבוי, ואז שקול למחוק תנועות ישנות.');
+      alert('⚠️ אחסון מקומי מלא!\n\nאנא לחץ הגדרות → "📤 ייצוא לקובץ" לגיבוי, ואז שקול למחוק תנועות ישנות.');
     } else {
       console.error('Save failed:', e);
     }
@@ -1111,10 +1129,14 @@ function setDateValue(isoStr) {
 }
 
 function getDateValue() {
-  const d = document.getElementById('dateDay').value;
-  const m = document.getElementById('dateMonth').value;
-  const y = document.getElementById('dateYear').value;
-  return `${y}-${m}-${d}`;
+  const d = parseInt(document.getElementById('dateDay').value, 10);
+  const m = parseInt(document.getElementById('dateMonth').value, 10);
+  const y = parseInt(document.getElementById('dateYear').value, 10);
+  if (!d || !m || !y) return null;
+  // Clamp day to the actual max for the selected month (prevents "31 Feb" -> "3 Mar")
+  const maxDay = new Date(y, m, 0).getDate(); // day 0 of next month = last of this month
+  const safeDay = Math.min(d, maxDay);
+  return `${y}-${String(m).padStart(2,'0')}-${String(safeDay).padStart(2,'0')}`;
 }
 
 function setDateQuick(daysOffset) {
@@ -1220,6 +1242,8 @@ function deleteTransaction(customerId, transactionId) {
   if (!c) return;
   const t = c.transactions.find(x => x.id === transactionId);
   if (!t) return;
+  const sign = t.type === 'debt' ? '+' : '-';
+  if (!confirm(`למחוק את התנועה?\n\n${sign}${Math.round(t.amount)}₪ בתאריך ${fmtDate(t.date)}`)) return;
   // Save a snapshot for undo
   const snapshot = JSON.parse(JSON.stringify(t));
   c.transactions = c.transactions.filter(x => x.id !== transactionId);
@@ -1564,6 +1588,11 @@ async function syncDownload() {
       setSyncStatus('⚠️ אין נתונים בענן עבור הקוד הזה', true);
       return;
     }
+    // SAFETY: validate cloud data BEFORE replacing local state
+    if (!validateStateShape(data)) {
+      setSyncStatus('❌ נתוני הענן פגומים - לא ניתן להוריד', true);
+      return;
+    }
     const customerCount = data.customers.length;
     if (!confirm(`נמצאו ${customerCount} לקוחות בענן.\n\nהורדה תדרוס את כל הנתונים הקיימים. להמשיך?`)) {
       setSyncStatus('בוטל');
@@ -1573,8 +1602,9 @@ async function syncDownload() {
     // Remove sync metadata before storing
     delete data._syncMeta;
     state = data;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    saveStateRaw();
     if (cloudTime) localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
+    localStorage.removeItem(LOCAL_DIRTY_KEY);
     setSyncStatus('✅ הורד מהענן בהצלחה');
     render();
   } catch (e) {
@@ -1606,15 +1636,23 @@ async function quickSync() {
     if (response.ok) {
       const cloudData = await response.json();
       if (cloudData && cloudData.customers) {
+        // SAFETY: validate cloud data BEFORE any comparison
+        if (!validateStateShape(cloudData)) {
+          throw new Error('נתוני הענן פגומים - לא בוצע סנכרון');
+        }
         const cloudTime = cloudData._syncMeta?.uploadedAt;
         const localKnownCloudTime = localStorage.getItem(LAST_CLOUD_TIME_KEY);
         if (cloudTime && cloudTime !== localKnownCloudTime) {
-          const localModified = localStorage.getItem(LOCAL_MODIFIED_KEY);
-          // Manual sync - if cloud is newer than local modified, download
-          if (!localModified || new Date(cloudTime) > new Date(localModified)) {
+          // Primary check: dataVersion (reliable, no clock skew)
+          const cloudVersion = cloudData.dataVersion || 0;
+          const localVersion = state.dataVersion || 0;
+          const shouldDownload = cloudVersion > localVersion ||
+            // Fallback for legacy data with no version: use timestamps
+            (cloudVersion === 0 && localVersion === 0 && (!localStorage.getItem(LOCAL_MODIFIED_KEY) || new Date(cloudTime) > new Date(localStorage.getItem(LOCAL_MODIFIED_KEY))));
+          if (shouldDownload) {
             delete cloudData._syncMeta;
             state = cloudData;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            saveStateRaw();
             localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
             localStorage.removeItem(LOCAL_DIRTY_KEY);
             render();
@@ -1730,13 +1768,14 @@ function autoSyncIfEnabled() {
           const localKnownCloudTime = localStorage.getItem(LAST_CLOUD_TIME_KEY);
 
           // If cloud has a different time than what we know, another device updated it
-          // Don't overwrite - merge or skip
           if (cloudTime && cloudTime !== localKnownCloudTime) {
-            const cloudTotal = cloudData.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
-            const localTotal = state.customers.reduce((sum, c) => sum + ((c.transactions || []).length), 0);
+            // Use dataVersion (reliable, no clock skew, respects deletions)
+            const cloudVersion = cloudData.dataVersion || 0;
+            const localVersion = state.dataVersion || 0;
 
-            // Only download if cloud has more data AND validates
-            if (cloudTotal > localTotal + 5 && validateStateShape(cloudData)) {
+            // Only download if cloud version is HIGHER than local AND validates
+            // (Deletions decrement nothing, but incrementing counter still works correctly)
+            if (cloudVersion > localVersion && validateStateShape(cloudData)) {
               delete cloudData._syncMeta;
               state = cloudData;
               saveStateRaw();

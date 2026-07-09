@@ -3,21 +3,34 @@
 // Ported from the Netlify function (netlify/functions/sync.mjs); Netlify Blobs -> KV.
 // Requires a KV namespace bound to this Pages project with the variable name: DEBTS
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type'
-};
+// Allowed origins for CORS. Anything else gets no CORS headers (browser blocks cross-origin JS).
+// Same-origin requests still work (no CORS needed) regardless.
+const ALLOWED_ORIGINS = new Set([
+  'https://hovot-app.pages.dev',
+  'http://localhost:8000',
+  'http://127.0.0.1:8000'
+]);
+
+function corsHeaders(request) {
+  const origin = request.headers.get('origin') || '';
+  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : 'https://hovot-app.pages.dev';
+  return {
+    'Access-Control-Allow-Origin': allowed,
+    'Vary': 'Origin',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  };
+}
 
 // 1MB max body size to prevent abuse
 const MAX_BODY_SIZE = 1024 * 1024;
 
-function json(body, status = 200) {
+function json(body, status = 200, request = null) {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json',
-      ...CORS_HEADERS
+      ...(request ? corsHeaders(request) : {})
     }
   });
 }
@@ -58,7 +71,7 @@ export async function onRequest(context) {
 
   // CORS preflight
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return new Response(null, { status: 204, headers: corsHeaders(request) });
   }
 
   const url = new URL(request.url);
@@ -66,43 +79,43 @@ export async function onRequest(context) {
 
   // Validate sync code - 6+ chars alphanumeric for better security
   if (!code || code.length < 6 || code.length > 100 || !/^[a-zA-Z0-9_\-]+$/.test(code)) {
-    return json({ error: 'Sync code must be 6-100 characters (letters, numbers, _, -)' }, 400);
+    return json({ error: 'Sync code must be 6-100 characters (letters, numbers, _, -)' }, 400, request);
   }
 
   // KV namespace binding (set in Cloudflare Pages project settings, variable name: DEBTS)
   const store = env.DEBTS;
   if (!store) {
-    return json({ error: 'Storage not configured (missing KV binding "DEBTS")' }, 500);
+    return json({ error: 'Storage not configured (missing KV binding "DEBTS")' }, 500, request);
   }
 
   try {
     if (request.method === 'GET') {
       const data = await store.get(code, { type: 'json' });
-      return json(data || null);
+      return json(data || null, 200, request);
     }
 
     if (request.method === 'POST') {
       // Check body size before parsing
       const contentLength = parseInt(request.headers.get('content-length') || '0');
       if (contentLength > MAX_BODY_SIZE) {
-        return json({ error: 'Request body too large (max 1MB)' }, 413);
+        return json({ error: 'Request body too large (max 1MB)' }, 413, request);
       }
 
       let body;
       try {
         const text = await request.text();
         if (text.length > MAX_BODY_SIZE) {
-          return json({ error: 'Request body too large' }, 413);
+          return json({ error: 'Request body too large' }, 413, request);
         }
         body = JSON.parse(text);
       } catch (e) {
-        return json({ error: 'Invalid JSON body' }, 400);
+        return json({ error: 'Invalid JSON body' }, 400, request);
       }
 
       // Sanitize and validate
       const cleaned = sanitize(body);
       if (!validateStateShape(cleaned)) {
-        return json({ error: 'Data structure is invalid' }, 400);
+        return json({ error: 'Data structure is invalid' }, 400, request);
       }
 
       // Stamp upload time
@@ -118,11 +131,11 @@ export async function onRequest(context) {
       return json({
         success: true,
         uploadedAt: dataWithMeta._syncMeta.uploadedAt
-      });
+      }, 200, request);
     }
 
-    return json({ error: 'Method not allowed' }, 405);
+    return json({ error: 'Method not allowed' }, 405, request);
   } catch (err) {
-    return json({ error: 'Server error: ' + err.message }, 500);
+    return json({ error: 'Server error: ' + err.message }, 500, request);
   }
 }
