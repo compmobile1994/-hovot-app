@@ -914,6 +914,12 @@ document.querySelectorAll('.tab').forEach(tab => {
 });
 
 // ==================== Modals ====================
+// Track open modals as a stack so the Android/browser back button can close
+// them one at a time instead of dismissing the whole app.
+const modalStack = [];
+let backButtonHandlerInstalled = false;
+let isHandlingPopstate = false; // guards against re-entrant popstate/close loops
+
 function openModal(id) {
   const modal = document.getElementById(id);
   // Stack modal above any currently-open modal
@@ -926,11 +932,40 @@ function openModal(id) {
   });
   modal.style.zIndex = maxZ + 1;
   modal.classList.add('active');
+  // Track in stack + push a history entry so Back closes THIS modal
+  modalStack.push(id);
+  try {
+    history.pushState({ modalId: id, stackDepth: modalStack.length }, '');
+  } catch(e) { /* history API might be limited in some contexts */ }
+  installBackButtonHandler();
 }
+
 function closeModal(id) {
   const modal = document.getElementById(id);
+  if (!modal) return;
   modal.classList.remove('active');
   modal.style.zIndex = '';
+  // Remove from tracking stack
+  const idx = modalStack.lastIndexOf(id);
+  if (idx !== -1) modalStack.splice(idx, 1);
+  // Pop the matching history entry, unless we're already handling popstate
+  // (the browser has already popped it in that case)
+  if (!isHandlingPopstate) {
+    try { history.back(); } catch(e) { /* ignore */ }
+  }
+}
+
+function installBackButtonHandler() {
+  if (backButtonHandlerInstalled) return;
+  backButtonHandlerInstalled = true;
+  window.addEventListener('popstate', () => {
+    // If there's an open modal, close only the top-most one
+    if (modalStack.length === 0) return;
+    isHandlingPopstate = true;
+    const topId = modalStack[modalStack.length - 1];
+    closeModal(topId);
+    isHandlingPopstate = false;
+  });
 }
 document.querySelectorAll('.modal-overlay').forEach(o => {
   o.addEventListener('click', e => { if (e.target === o) o.classList.remove('active'); });
