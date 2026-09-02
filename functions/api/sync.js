@@ -3,17 +3,15 @@
 // Ported from the Netlify function (netlify/functions/sync.mjs); Netlify Blobs -> KV.
 // Requires a KV namespace bound to this Pages project with the variable name: DEBTS
 
-// Allowed origins for CORS. Anything else gets no CORS headers (browser blocks cross-origin JS).
-// Same-origin requests still work (no CORS needed) regardless.
-const ALLOWED_ORIGINS = new Set([
-  'https://hovot-app.pages.dev',
-  'http://localhost:8000',
-  'http://127.0.0.1:8000'
-]);
-
+// CORS. No cookies/credentials are used - the secret sync code in the query string is
+// the sole access control - so it's safe to reflect whatever Origin the browser sends.
+// This lets the app work when opened as a local file (file:// pages send "Origin: null"),
+// from the deployed site, or from a local dev server, without an allowlist to maintain.
 function corsHeaders(request) {
   const origin = request.headers.get('origin') || '';
-  const allowed = ALLOWED_ORIGINS.has(origin) ? origin : 'https://hovot-app.pages.dev';
+  // Reflect the caller's origin (including the literal "null" that file:// pages send).
+  // Fall back to "*" when there's no Origin header (e.g. same-origin GET requests).
+  const allowed = origin || '*';
   return {
     'Access-Control-Allow-Origin': allowed,
     'Vary': 'Origin',

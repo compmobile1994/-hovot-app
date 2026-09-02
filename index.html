@@ -1588,7 +1588,13 @@ function resetAll() {
 }
 
 // ==================== Cloud Sync ====================
-const SYNC_API = '/api/sync';
+// When the app runs from the deployed site (http/https) use a same-origin relative
+// path (no CORS needed). When it's opened as a local file on a computer
+// (file:///.../index.html), location.host is empty and a relative path would resolve
+// to file:///api/sync and silently fail - so point straight at the cloud site.
+const SYNC_API = (location.protocol === 'http:' || location.protocol === 'https:')
+  ? '/api/sync'
+  : 'https://hovot-app.pages.dev/api/sync';
 const SYNC_CODE_KEY = 'sync_code';
 const AUTO_SYNC_KEY = 'auto_sync_enabled';
 const LAST_CLOUD_TIME_KEY = 'last_cloud_time';
