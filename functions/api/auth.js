@@ -107,7 +107,9 @@ export async function onRequest(context) {
     return json({ error: 'Method not allowed' }, 405, request);
   }
 
-  const clientId = env.GOOGLE_CLIENT_ID;
+  // The OAuth client ID is public (it is embedded in the page anyway), so we fall
+  // back to the known value when no env var is set - no Cloudflare config needed.
+  const clientId = env.GOOGLE_CLIENT_ID || '689453096519-no96bv5e6h8rd0kchb79kt3ggdsi1vga.apps.googleusercontent.com';
   if (!clientId) {
     return json({ error: 'Google sign-in not configured (missing GOOGLE_CLIENT_ID)' }, 500, request);
   }
