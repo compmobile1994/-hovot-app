@@ -376,6 +376,7 @@
     .modal-overlay { align-items: center; }
   }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div class="container">
@@ -448,6 +449,22 @@
 
     <div class="backup-section">
       <h3>☁️ סנכרון ענן (בין מחשב ופלאפון)</h3>
+
+      <!-- Google sign-in (shown only when GOOGLE_CLIENT_ID is configured) -->
+      <div id="googleAuthBox" style="display:none">
+        <div id="googleSignedOut">
+          <div style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:8px">
+            התחבר עם חשבון Google — הנתונים ייגבו אוטומטית לחשבון שלך, בלי קוד לזכור.
+          </div>
+          <div id="gSignInBtn" style="display:flex;justify-content:center;margin-bottom:6px"></div>
+        </div>
+        <div id="googleSignedIn" style="display:none;align-items:center;justify-content:space-between;gap:8px;background:#ecfdf5;border:1px solid #a7f3d0;padding:10px 12px;border-radius:10px">
+          <span style="font-size:13px;color:#065f46">✅ מחובר כ־<b id="googleEmailLabel"></b><br>גיבוי אוטומטי פעיל</span>
+          <button class="btn btn-secondary" style="font-size:12px;padding:6px 10px;flex:0 0 auto" onclick="signOutGoogle()">התנתק</button>
+        </div>
+        <div style="text-align:center;font-size:11px;color:#9ca3af;margin:12px 0 10px">— או קוד סנכרון ידני —</div>
+      </div>
+
       <div style="font-size:12px;color:#6b7280;line-height:1.5;margin-bottom:12px">
         בחר קוד סנכרון (לפחות 6 תווים) - הזן את אותו הקוד בפלאפון ובמחשב כדי לסנכרן את הנתונים.
       </div>
@@ -510,8 +527,15 @@
       אם כבר השתמשת באפליקציה במכשיר אחר — <b>הנתונים שלך שמורים בענן</b> ולא אבדו.
     </div>
     <div style="font-size:13px;color:#6b7280;line-height:1.6;margin-bottom:16px;text-align:center">
-      הזן את קוד הסנכרון שלך כדי לשחזר את כל הלקוחות והתנועות.
+      התחבר עם Google כדי לשחזר, או הזן את קוד הסנכרון.
     </div>
+
+    <!-- Google sign-in on the welcome screen (shown only when configured) -->
+    <div id="welcomeGoogleBox" style="display:none">
+      <div id="welcomeGSignInBtn" style="display:flex;justify-content:center;margin-bottom:6px"></div>
+      <div style="text-align:center;font-size:11px;color:#9ca3af;margin:12px 0">— או שחזר עם קוד סנכרון —</div>
+    </div>
+
     <div class="form-group">
       <label class="form-label">קוד סנכרון</label>
       <input type="text" id="welcomeCodeInput" class="form-input" placeholder="לדוגמה: dvir-debts-4884" maxlength="100" autocomplete="off" spellcheck="false" />
@@ -690,9 +714,9 @@ async function loadState() {
 
 async function tryRestoreFromCloud() {
   const code = localStorage.getItem(SYNC_CODE_KEY);
-  if (!code) return false;
+  if (!code && !isGoogleSignedIn()) return false;
   try {
-    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, { headers: authHeaders() });
     if (!response.ok) return false;
     const cloudData = await response.json();
     if (!cloudData || !cloudData.customers || cloudData.customers.length === 0) {
@@ -1636,6 +1660,25 @@ const LAST_CLOUD_TIME_KEY = 'last_cloud_time';
 const LOCAL_MODIFIED_KEY = 'local_last_modified';
 const LOCAL_DIRTY_KEY = 'local_has_unsynced_changes';
 
+// ---- Google Sign-In (optional) ----
+const AUTH_API = (location.protocol === 'http:' || location.protocol === 'https:')
+  ? '/api/auth'
+  : 'https://hovot-app.pages.dev/api/auth';
+// Paste your Google OAuth Client ID here to enable "Sign in with Google".
+// While empty, the app behaves exactly as before (sync code only).
+const GOOGLE_CLIENT_ID = '';
+const GOOGLE_SESSION_KEY = 'google_session';
+const GOOGLE_EMAIL_KEY = 'google_email';
+
+function isGoogleSignedIn() { return !!localStorage.getItem(GOOGLE_SESSION_KEY); }
+// Auth header for sync requests - a Google session token takes precedence over the code.
+function authHeaders() {
+  const token = localStorage.getItem(GOOGLE_SESSION_KEY);
+  return token ? { 'Authorization': 'Bearer ' + token } : {};
+}
+// Do we have any way to sync - a Google session or a sync code?
+function hasSyncAuth() { return isGoogleSignedIn() || !!localStorage.getItem(SYNC_CODE_KEY); }
+
 function setSyncStatus(msg, isError = false) {
   const el = document.getElementById('syncStatus');
   if (el) {
@@ -1671,8 +1714,10 @@ function validateSyncCode(code) {
 
 async function syncUpload(silent = false) {
   const code = getSyncCode();
-  if (!validateSyncCode(code)) return false;
-  saveSyncCode(code);
+  if (!isGoogleSignedIn()) {
+    if (!validateSyncCode(code)) return false;
+    saveSyncCode(code);
+  }
   if (!silent) setSyncStatus('⏳ מעלה לענן...');
   // Capture the local modified timestamp BEFORE upload starts (compare-and-swap)
   const localModifiedAtStart = localStorage.getItem(LOCAL_MODIFIED_KEY);
@@ -1685,7 +1730,7 @@ async function syncUpload(silent = false) {
     // low-version device (e.g. right after a reinstall, with only demo data) from
     // wiping the real data in the cloud - which is exactly how data was lost before.
     try {
-      const guardRes = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+      const guardRes = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, { headers: authHeaders() });
       if (guardRes.ok) {
         const cloudNow = await guardRes.json();
         if (cloudNow && Array.isArray(cloudNow.customers) && cloudNow.customers.length > 0 && validateStateShape(cloudNow)) {
@@ -1715,10 +1760,11 @@ async function syncUpload(silent = false) {
 
     const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
       body: snapshot
     });
     if (!response.ok) {
+      clearGoogleSessionIfUnauthorized(response.status);
       const errBody = await response.json().catch(() => ({}));
       throw new Error(errBody.error || 'שגיאה ' + response.status);
     }
@@ -1741,12 +1787,15 @@ async function syncUpload(silent = false) {
 
 async function syncDownload() {
   const code = getSyncCode();
-  if (!validateSyncCode(code)) return;
-  saveSyncCode(code);
+  if (!isGoogleSignedIn()) {
+    if (!validateSyncCode(code)) return;
+    saveSyncCode(code);
+  }
   setSyncStatus('⏳ מוריד מהענן...');
   try {
-    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, { headers: authHeaders() });
     if (!response.ok) {
+      clearGoogleSessionIfUnauthorized(response.status);
       const errBody = await response.json().catch(() => ({}));
       throw new Error(errBody.error || 'שגיאה ' + response.status);
     }
@@ -1782,9 +1831,9 @@ async function syncDownload() {
 // Auto-pull: silently check if cloud has newer data than what we have
 // Quick sync - manual button at top of app for instant sync
 async function quickSync() {
-  const code = localStorage.getItem(SYNC_CODE_KEY);
-  if (!code) {
-    alert('צריך להגדיר קוד סנכרון בהגדרות תחילה');
+  const code = localStorage.getItem(SYNC_CODE_KEY) || '';
+  if (!hasSyncAuth()) {
+    alert('התחבר עם Google או הגדר קוד סנכרון בהגדרות תחילה');
     return;
   }
   const btn = document.getElementById('quickSyncBtn');
@@ -1799,7 +1848,7 @@ async function quickSync() {
       await syncUpload(true);
     }
     // Then fetch latest from cloud
-    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, { headers: authHeaders() });
     if (response.ok) {
       const cloudData = await response.json();
       if (cloudData && cloudData.customers) {
@@ -1847,8 +1896,8 @@ async function quickSync() {
 
 async function autoPullFromCloud(showStatus = false) {
   if (localStorage.getItem(AUTO_SYNC_KEY) !== '1') return;
-  const code = localStorage.getItem(SYNC_CODE_KEY);
-  if (!code) return;
+  const code = localStorage.getItem(SYNC_CODE_KEY) || '';
+  if (!hasSyncAuth()) return;
 
   // CRITICAL: Don't auto-pull if local has unsaved changes
   // This prevents the bug where user makes a change, then auto-pull overwrites it before auto-upload completes
@@ -1862,7 +1911,7 @@ async function autoPullFromCloud(showStatus = false) {
   }
 
   try {
-    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, { headers: authHeaders() });
     if (!response.ok) return;
     const cloudData = await response.json();
     if (!cloudData || !cloudData.customers) return;
@@ -1918,8 +1967,8 @@ async function autoPullFromCloud(showStatus = false) {
 let autoSyncDebounce = null;
 function autoSyncIfEnabled() {
   if (localStorage.getItem(AUTO_SYNC_KEY) !== '1') return;
-  const code = localStorage.getItem(SYNC_CODE_KEY);
-  if (!code) return;
+  const code = localStorage.getItem(SYNC_CODE_KEY) || '';
+  if (!hasSyncAuth()) return;
 
   // Debounce: wait 10 seconds after last change before uploading
   // This batches rapid edits into a single upload, saving API calls
@@ -1927,7 +1976,7 @@ function autoSyncIfEnabled() {
   autoSyncDebounce = setTimeout(async () => {
     // SAFETY: Check cloud first. If cloud has unknown/newer changes, we must not overwrite.
     try {
-      const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+      const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, { headers: authHeaders() });
       if (response.ok) {
         const cloudData = await response.json();
         if (cloudData && cloudData.customers) {
@@ -1969,11 +2018,13 @@ function toggleAutoSync() {
   const enabled = checkbox.checked;
   if (enabled) {
     const code = getSyncCode();
-    if (!validateSyncCode(code)) {
-      checkbox.checked = false;
-      return;
+    if (!isGoogleSignedIn()) {
+      if (!validateSyncCode(code)) {
+        checkbox.checked = false;
+        return;
+      }
+      saveSyncCode(code);
     }
-    saveSyncCode(code);
     localStorage.setItem(AUTO_SYNC_KEY, '1');
     setSyncStatus('✅ סנכרון אוטומטי הופעל - כל שינוי יישמר בענן');
     syncUpload(false); // Initial upload
@@ -1986,6 +2037,7 @@ function toggleAutoSync() {
 // ==================== First-run welcome / restore ====================
 function showWelcome() {
   openModal('welcomeModal');
+  initGoogleAuth(); // render the Google button inside the welcome screen too
 }
 
 // Restore data from the cloud using a sync code entered on the welcome screen.
@@ -1997,7 +2049,7 @@ async function welcomeRestore() {
   if (!code || code.length < 6) { setStat('הזן קוד בן 6 תווים לפחות', true); return; }
   setStat('⏳ מחפש את הנתונים שלך בענן...', false);
   try {
-    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, { headers: authHeaders() });
     if (!response.ok) throw new Error('שגיאת שרת ' + response.status);
     const data = await response.json();
     if (!data || !data.customers || data.customers.length === 0) {
@@ -2037,9 +2089,9 @@ function welcomeStartFresh() {
 function updateBackupReminder() {
   const banner = document.getElementById('backupReminder');
   if (!banner) return;
-  const hasCode = !!localStorage.getItem(SYNC_CODE_KEY);
+  const backedUp = isGoogleSignedIn() || !!localStorage.getItem(SYNC_CODE_KEY);
   const hasData = !!(state && state.customers && state.customers.length > 0);
-  banner.style.display = (!hasCode && hasData) ? 'block' : 'none';
+  banner.style.display = (!backedUp && hasData) ? 'block' : 'none';
 }
 
 // Jump to the sync settings and focus the code field (from the reminder banner).
@@ -2050,7 +2102,116 @@ function goToSyncSettings() {
   if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
 }
 
+// ==================== Google Sign-In flow ====================
+function googleConfigured() { return typeof GOOGLE_CLIENT_ID === 'string' && GOOGLE_CLIENT_ID.length > 10; }
+
+// GIS loads async - run cb once window.google.accounts.id is available.
+function whenGoogleReady(cb, tries = 25) {
+  if (window.google && google.accounts && google.accounts.id) { cb(); return; }
+  if (tries <= 0) return;
+  setTimeout(() => whenGoogleReady(cb, tries - 1), 200);
+}
+
+let _googleInited = false;
+function initGoogleAuth() {
+  if (!googleConfigured()) return; // feature stays off until a client id is set
+  const box = document.getElementById('googleAuthBox');
+  if (box) box.style.display = 'block';
+  const wbox = document.getElementById('welcomeGoogleBox');
+  if (wbox) wbox.style.display = 'block';
+  updateGoogleUI();
+  whenGoogleReady(() => {
+    if (!_googleInited) {
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: onGoogleCredential,
+        auto_select: true
+      });
+      _googleInited = true;
+    }
+    renderGoogleButtons();
+    if (!isGoogleSignedIn()) {
+      try { google.accounts.id.prompt(); } catch (e) {} // one-tap auto sign-in, best effort
+    }
+  });
+}
+
+function renderGoogleButtons() {
+  if (!(window.google && google.accounts && google.accounts.id)) return;
+  ['gSignInBtn', 'welcomeGSignInBtn'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.innerHTML = '';
+      google.accounts.id.renderButton(el, { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', logo_alignment: 'center' });
+    }
+  });
+}
+
+function updateGoogleUI() {
+  const signedIn = isGoogleSignedIn();
+  const outEl = document.getElementById('googleSignedOut');
+  const inEl = document.getElementById('googleSignedIn');
+  if (outEl) outEl.style.display = signedIn ? 'none' : 'block';
+  if (inEl) inEl.style.display = signedIn ? 'flex' : 'none';
+  const emailEl = document.getElementById('googleEmailLabel');
+  if (emailEl) emailEl.textContent = localStorage.getItem(GOOGLE_EMAIL_KEY) || '';
+}
+
+// Called by Google Identity Services with the signed-in user's ID token.
+async function onGoogleCredential(response) {
+  const credential = response && response.credential;
+  if (!credential) return;
+  setSyncStatus('⏳ מתחבר עם Google...');
+  try {
+    const res = await fetch(AUTH_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.token) throw new Error(data.error || ('שגיאה ' + res.status));
+    localStorage.setItem(GOOGLE_SESSION_KEY, data.token);
+    localStorage.setItem(GOOGLE_EMAIL_KEY, data.email || '');
+    localStorage.setItem(AUTO_SYNC_KEY, '1'); // auto-backup from now on - no button needed
+    const wm = document.getElementById('welcomeModal');
+    if (wm && wm.classList.contains('active')) closeModal('welcomeModal');
+    updateGoogleUI();
+    initSyncUI();
+    updateBackupReminder();
+    setSyncStatus('✅ מחובר כ־' + (data.email || 'חשבון Google'));
+    // First sync: pull the account's data if it exists, otherwise push our local data
+    // up. This migrates existing data to the Google account on the first sign-in.
+    const pulled = await tryRestoreFromCloud();
+    if (!pulled) await syncUpload(true);
+    render();
+  } catch (e) {
+    setSyncStatus('❌ התחברות נכשלה: ' + e.message, true);
+  }
+}
+
+// If a sync request is rejected with 401 while signed in, the session expired -
+// clear it so the UI returns to a signed-out state and the user can sign in again.
+function clearGoogleSessionIfUnauthorized(status) {
+  if (status === 401 && isGoogleSignedIn()) {
+    localStorage.removeItem(GOOGLE_SESSION_KEY);
+    updateGoogleUI();
+    initGoogleAuth();
+    setSyncStatus('⚠️ ההתחברות פגה - התחבר שוב עם Google', true);
+  }
+}
+
+function signOutGoogle() {
+  localStorage.removeItem(GOOGLE_SESSION_KEY);
+  localStorage.removeItem(GOOGLE_EMAIL_KEY);
+  try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
+  updateGoogleUI();
+  renderGoogleButtons();
+  updateBackupReminder();
+  setSyncStatus('התנתקת מ-Google. הנתונים נשמרים במכשיר הזה.');
+}
+
 function initSyncUI() {
+  initGoogleAuth();
   const savedCode = localStorage.getItem(SYNC_CODE_KEY) || '';
   const input = document.getElementById('syncCodeInput');
   if (input) input.value = savedCode;

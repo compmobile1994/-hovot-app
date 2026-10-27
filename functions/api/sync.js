@@ -16,7 +16,7 @@ function corsHeaders(request) {
     'Access-Control-Allow-Origin': allowed,
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
   };
 }
 
@@ -72,23 +72,40 @@ export async function onRequest(context) {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   }
 
-  const url = new URL(request.url);
-  const code = (url.searchParams.get('code') || '').trim();
-
-  // Validate sync code - 6+ chars alphanumeric for better security
-  if (!code || code.length < 6 || code.length > 100 || !/^[a-zA-Z0-9_\-]+$/.test(code)) {
-    return json({ error: 'Sync code must be 6-100 characters (letters, numbers, _, -)' }, 400, request);
-  }
-
   // KV namespace binding (set in Cloudflare Pages project settings, variable name: DEBTS)
   const store = env.DEBTS;
   if (!store) {
     return json({ error: 'Storage not configured (missing KV binding "DEBTS")' }, 500, request);
   }
 
+  // Resolve the storage key. Prefer a Google session (Authorization: Bearer <token>),
+  // which keys data to the signed-in account (u:<sub>). Fall back to the legacy sync
+  // code in ?code= so existing data and devices keep working unchanged.
+  let storageKey;
+  const authHeader = request.headers.get('authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    const token = authHeader.slice(7).trim();
+    if (!/^[a-f0-9]{16,128}$/.test(token)) {
+      return json({ error: 'Invalid session token' }, 401, request);
+    }
+    const session = await store.get('sess:' + token, { type: 'json' });
+    if (!session || !session.sub) {
+      return json({ error: 'Session expired - please sign in again' }, 401, request);
+    }
+    storageKey = 'u:' + session.sub;
+  } else {
+    const url = new URL(request.url);
+    const code = (url.searchParams.get('code') || '').trim();
+    // Validate sync code - 6+ chars alphanumeric for better security
+    if (!code || code.length < 6 || code.length > 100 || !/^[a-zA-Z0-9_\-]+$/.test(code)) {
+      return json({ error: 'Sync code must be 6-100 characters (letters, numbers, _, -)' }, 400, request);
+    }
+    storageKey = code;
+  }
+
   try {
     if (request.method === 'GET') {
-      const data = await store.get(code, { type: 'json' });
+      const data = await store.get(storageKey, { type: 'json' });
       return json(data || null, 200, request);
     }
 
@@ -125,7 +142,7 @@ export async function onRequest(context) {
         }
       };
 
-      await store.put(code, JSON.stringify(dataWithMeta));
+      await store.put(storageKey, JSON.stringify(dataWithMeta));
       return json({
         success: true,
         uploadedAt: dataWithMeta._syncMeta.uploadedAt

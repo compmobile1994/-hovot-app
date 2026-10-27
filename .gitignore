@@ -11,6 +11,9 @@ Thumbs.db
 .netlify
 node_modules
 
+# Local wrangler (Cloudflare) dev state
+.wrangler
+
 # Personal data / dev artifacts - must NEVER be deployed publicly
 *.zip
 chat_flex.txt
