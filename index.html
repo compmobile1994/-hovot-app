@@ -380,6 +380,11 @@
 <body>
 <div class="container">
 
+  <!-- Backup reminder: shown when there is data but no cloud sync code set up -->
+  <div id="backupReminder" style="display:none;background:#fef3c7;color:#92400e;padding:11px 14px;font-size:13px;line-height:1.5;text-align:center;cursor:pointer;border-radius:0 0 12px 12px" onclick="goToSyncSettings()">
+    ⚠️ הנתונים נשמרים רק במכשיר הזה. לחץ כאן להפעלת גיבוי לענן — כדי שלא יימחקו בהתקנה חדשה.
+  </div>
+
   <header>
     <h1 style="display:flex;justify-content:space-between;align-items:center">
       <span>💼 חובות</span>
@@ -497,6 +502,28 @@
 <button class="fab" onclick="openCustomerModal()" aria-label="הוסף לקוח חדש" title="הוסף לקוח חדש">+</button>
 
 <!-- Customer Modal -->
+<!-- First-run welcome / restore screen (no local data + no sync code) -->
+<div class="modal-overlay" id="welcomeModal">
+  <div class="modal" style="max-width:440px">
+    <h2 style="text-align:center">👋 ברוך הבא לניהול חובות</h2>
+    <div style="font-size:14px;color:#374151;line-height:1.6;margin-bottom:8px;text-align:center">
+      אם כבר השתמשת באפליקציה במכשיר אחר — <b>הנתונים שלך שמורים בענן</b> ולא אבדו.
+    </div>
+    <div style="font-size:13px;color:#6b7280;line-height:1.6;margin-bottom:16px;text-align:center">
+      הזן את קוד הסנכרון שלך כדי לשחזר את כל הלקוחות והתנועות.
+    </div>
+    <div class="form-group">
+      <label class="form-label">קוד סנכרון</label>
+      <input type="text" id="welcomeCodeInput" class="form-input" placeholder="לדוגמה: dvir-debts-4884" maxlength="100" autocomplete="off" spellcheck="false" />
+    </div>
+    <button class="btn btn-primary btn-block" onclick="welcomeRestore()">📥 שחזר את הנתונים שלי</button>
+    <div id="welcomeStatus" style="margin-top:10px;font-size:13px;text-align:center;min-height:20px;color:#6b7280"></div>
+    <div style="text-align:center;margin-top:16px;border-top:1px solid #f0f0f0;padding-top:14px">
+      <button class="btn btn-secondary" style="font-size:13px" onclick="welcomeStartFresh()">אני משתמש חדש — התחל מאפס</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="customerModal">
   <div class="modal">
     <button class="modal-close" onclick="closeModal('customerModal')" aria-label="סגור">×</button>
@@ -602,6 +629,11 @@ let state = {
   meta: { createdAt: new Date().toISOString() }
 };
 
+// Set when the app opens with no local data AND no sync code: a fresh install.
+// init() then shows the welcome/restore screen instead of silently seeding demo
+// data (which used to look like "all my data was deleted" after reinstalling).
+let needsWelcome = false;
+
 // Safe ID regex - prevents XSS via crafted IDs in attributes
 const SAFE_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 function isSafeId(s) { return typeof s === 'string' && SAFE_ID_RE.test(s); }
@@ -649,7 +681,10 @@ async function loadState() {
   // No local data - try cloud BEFORE seeding (prevents seed from overwriting cloud)
   const restored = await tryRestoreFromCloud();
   if (!restored) {
-    seedInitialData();
+    // Fresh install with no sync code: ask the user to restore from cloud instead
+    // of silently seeding. This is what prevents "everything got deleted" on a new
+    // phone - their data lives in the cloud and just needs the sync code.
+    needsWelcome = true;
   }
 }
 
@@ -1619,6 +1654,7 @@ function saveSyncCode(code) {
   localStorage.setItem(SYNC_CODE_KEY, code);
   const input = document.getElementById('syncCodeInput');
   if (input) input.value = code;
+  if (typeof updateBackupReminder === 'function') updateBackupReminder();
 }
 
 function validateSyncCode(code) {
@@ -1913,6 +1949,73 @@ function toggleAutoSync() {
   }
 }
 
+// ==================== First-run welcome / restore ====================
+function showWelcome() {
+  openModal('welcomeModal');
+}
+
+// Restore data from the cloud using a sync code entered on the welcome screen.
+async function welcomeRestore() {
+  const input = document.getElementById('welcomeCodeInput');
+  const code = (input ? input.value.trim() : '');
+  const status = document.getElementById('welcomeStatus');
+  const setStat = (msg, err) => { if (status) { status.style.color = err ? '#dc2626' : '#6b7280'; status.textContent = msg; } };
+  if (!code || code.length < 6) { setStat('הזן קוד בן 6 תווים לפחות', true); return; }
+  setStat('⏳ מחפש את הנתונים שלך בענן...', false);
+  try {
+    const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+    if (!response.ok) throw new Error('שגיאת שרת ' + response.status);
+    const data = await response.json();
+    if (!data || !data.customers || data.customers.length === 0) {
+      setStat('⚠️ לא נמצאו נתונים עבור הקוד הזה. בדוק שהקלדת נכון ונסה שוב.', true);
+      return;
+    }
+    if (!validateStateShape(data)) { setStat('❌ הנתונים בענן פגומים.', true); return; }
+    const cloudTime = data._syncMeta?.uploadedAt;
+    delete data._syncMeta;
+    state = data;
+    saveStateRaw();
+    localStorage.setItem(SYNC_CODE_KEY, code);
+    localStorage.setItem(AUTO_SYNC_KEY, '1'); // keep this device synced from now on
+    if (cloudTime) localStorage.setItem(LAST_CLOUD_TIME_KEY, cloudTime);
+    localStorage.removeItem(LOCAL_DIRTY_KEY);
+    closeModal('welcomeModal');
+    initSyncUI();
+    render();
+    updateBackupReminder();
+    alert(`✅ שוחזרו ${state.customers.length} לקוחות מהענן!\n\nמעכשיו הנתונים יסתנכרנו אוטומטית במכשיר הזה.`);
+  } catch (e) {
+    setStat('❌ ' + e.message, true);
+  }
+}
+
+// User has no prior data - start with a clean, empty app.
+function welcomeStartFresh() {
+  if (!confirm('להתחיל עם אפליקציה ריקה?\n\nאם יש לך נתונים ממכשיר אחר, עדיף להזין את קוד הסנכרון כדי לשחזר אותם.')) return;
+  state = { customers: [], pendingImports: [], dataVersion: 0, meta: { createdAt: new Date().toISOString() } };
+  saveStateRaw();
+  closeModal('welcomeModal');
+  render();
+  updateBackupReminder();
+}
+
+// Show/hide the "your data is only on this device" reminder banner.
+function updateBackupReminder() {
+  const banner = document.getElementById('backupReminder');
+  if (!banner) return;
+  const hasCode = !!localStorage.getItem(SYNC_CODE_KEY);
+  const hasData = !!(state && state.customers && state.customers.length > 0);
+  banner.style.display = (!hasCode && hasData) ? 'block' : 'none';
+}
+
+// Jump to the sync settings and focus the code field (from the reminder banner).
+function goToSyncSettings() {
+  const tab = document.querySelector('.tab[data-tab="settings"]');
+  if (tab) tab.click();
+  const el = document.getElementById('syncCodeInput');
+  if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+}
+
 function initSyncUI() {
   const savedCode = localStorage.getItem(SYNC_CODE_KEY) || '';
   const input = document.getElementById('syncCodeInput');
@@ -1983,6 +2086,8 @@ document.querySelector('.fab').onclick = () => {
   render();
   initSyncUI();
   setupBackButtonHandling(); // Enable back-button-closes-modal + double-back-to-exit
+  if (needsWelcome) showWelcome(); // Fresh install: offer to restore from cloud
+  updateBackupReminder();
 })();
 
 // Register service worker for offline support
