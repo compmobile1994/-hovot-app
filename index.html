@@ -1679,6 +1679,40 @@ async function syncUpload(silent = false) {
   // Capture a snapshot of state for upload (avoid race with concurrent edits)
   const snapshot = JSON.stringify(state);
   try {
+    // HARDENING: never let this device overwrite a cloud copy that looks better than
+    // ours. All upload paths (manual button, auto-sync, enabling auto-sync, quick sync)
+    // funnel through here, so this one check protects them all. It stops a fresh or
+    // low-version device (e.g. right after a reinstall, with only demo data) from
+    // wiping the real data in the cloud - which is exactly how data was lost before.
+    try {
+      const guardRes = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`);
+      if (guardRes.ok) {
+        const cloudNow = await guardRes.json();
+        if (cloudNow && Array.isArray(cloudNow.customers) && cloudNow.customers.length > 0 && validateStateShape(cloudNow)) {
+          const cloudVersion = cloudNow.dataVersion || 0;
+          const localVersion = state.dataVersion || 0;
+          const cloudCount = cloudNow.customers.length;
+          const localCount = (state.customers || []).length;
+          const cloudNewer = cloudVersion > localVersion;           // cloud has a newer version
+          const bigShrink = localCount < cloudCount * 0.5;          // upload would drop >half the customers
+          if (cloudNewer || bigShrink) {
+            if (silent) {
+              // Automatic path: never clobber silently - skip and let the user decide.
+              setSyncStatus('🛡️ ההעלאה נעצרה - הענן מעודכן יותר. לחץ 🔄 לסנכרון ידני.', true);
+              return false;
+            }
+            const detail = cloudNewer
+              ? `בענן יש גרסה חדשה יותר (${cloudCount} לקוחות) מזו שבמכשיר הזה (${localCount} לקוחות).`
+              : `בענן יש ${cloudCount} לקוחות, אך במכשיר הזה רק ${localCount}.`;
+            if (!confirm(`⚠️ ${detail}\n\nהעלאה תדרוס את הנתונים שבענן, ואי אפשר לבטל.\n\nלהעלות בכל זאת?`)) {
+              setSyncStatus('בוטל - הנתונים שבענן נשמרו');
+              return false;
+            }
+          }
+        }
+      }
+    } catch (guardErr) { /* cloud unreachable for the safety check - fall through to normal upload */ }
+
     const response = await fetch(`${SYNC_API}?code=${encodeURIComponent(code)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
